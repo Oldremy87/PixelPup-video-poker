@@ -784,54 +784,104 @@ async function onClaimPayout() {
   if (totalPayout === 0) { alert('No payout to claim!'); return; }
 
   const playerAddress = addressInput.value.trim();
-  if (!playerAddress || !playerAddress.startsWith('nexa:')) {
+  if (!/^nexa:/.test(playerAddress)) {
     alert('Please enter a valid Nexa address (nexa:...)');
     return;
   }
 
-  let hcaptchaToken = '';
-  try {
-    hcaptchaToken = window.hcaptcha.getResponse();
-    if (!hcaptchaToken) { alert('Please complete the hCaptcha first.'); return; }
-  } catch (e) {
-    console.error('hCaptcha getResponse failed', e);
-    alert('Captcha not loaded. Please refresh and try again.');
-    return;
+  // --- get a valid hCaptcha token (visible OR invisible) ---
+  async function getToken() {
+    // 1) Try any visible widget token first (your form renders one by default)
+    try {
+      const t = window.hcaptcha?.getResponse?.();
+      if (t) return t;
+    } catch (_) {}
+
+    // 2) Fallback: render & execute an invisible widget on the same element
+    const el = document.getElementById('payoutCaptcha');
+    if (!el) throw new Error('Captcha element missing');
+
+    // If already rendered as a normal widget, get its widgetId by rendering again returns same id?
+    // Safer: explicitly render an INVISIBLE widget into the same element only if none exists.
+    let wid;
+    try {
+      // Try to detect an existing widget id on this element
+      if (window.hcaptcha?.getResponse && typeof window.hcaptcha.render === 'function') {
+        // hCaptcha doesn’t provide a direct “isRendered” check; render returns an id, but
+        // re-rendering same element is OK (it just returns an id or replaces content).
+        wid = window.hcaptcha.render(el, {
+          sitekey: HCAPTCHA_SITE_KEY,
+          size: 'invisible',
+          callback: () => {},            // we’ll use execute().then(getResponse) path
+          'error-callback': () => {},
+          'close-callback': () => {}
+        });
+      }
+    } catch (e) {
+      console.error('hCaptcha render failed', e);
+    }
+
+    // Execute invisible flow and grab the token
+    if (typeof window.hcaptcha?.execute === 'function') {
+      try {
+        await window.hcaptcha.execute(wid);
+        const t2 = window.hcaptcha.getResponse(wid);
+        if (t2) return t2;
+      } catch (e) {
+        console.error('hCaptcha execute failed', e);
+      }
+    }
+
+    throw new Error('Captcha not completed');
   }
 
+  // ---- do the claim ----
   try {
     show(payoutLoading);
     payoutBtn.disabled = true;
 
-   const resp = await postWithCsrf(API.payout, {
-  method: 'POST',
-  credentials: 'include',
-  headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({
-   body: JSON.stringify({ playerAddress, 'h-captcha-response': hcaptchaToken })
-  })
-})
+    const hToken = await getToken();  // throws if not available
 
-    const data = await resp.json();
+    const resp = await postWithCsrf(API.payout, {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        playerAddress,
+        'h-captcha-response': hToken   // ← standard field name
+      })
+    });
+
+    const data = await resp.json().catch(() => ({}));
+
     if (!resp.ok || data.error) {
+      // try to reset captcha to allow another attempt
+      try { window.hcaptcha?.reset?.(); } catch {}
       alert('Payout failed: ' + (data.error || resp.statusText));
       return;
     }
 
     try { feedSound.currentTime = 0; feedSound.play(); } catch {}
     alert(`Payout successful! Tx ID: ${data.txId}`);
-    totalPayout = 0;
+
+    totalPayout = data.remainingKIBL ?? 0;
     payoutEl.textContent = `Total Payout: ${totalPayout} KIBL`;
-    payoutBtn.disabled = true;
-    try { window.hcaptcha.reset(); } catch {}
+    payoutBtn.disabled = (totalPayout === 0);
+
+    // reset captcha for next time
+    try { window.hcaptcha?.reset?.(); } catch {}
+
   } catch (e) {
     console.error('Payout failed:', e);
-    alert('Payout failed. Try again.');
+    // reset captcha so user can retry
+    try { window.hcaptcha?.reset?.(); } catch {}
+    alert(e && e.message ? e.message : 'Payout failed. Try again.');
   } finally {
     hide(payoutLoading);
     payoutBtn.disabled = (totalPayout === 0);
   }
 }
+
 
 
   function checkAchievements() {}
