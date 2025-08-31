@@ -609,12 +609,29 @@ app.post('/api/payout', async (req, res) => {
 
     // --- read authoritative session balance (minor units) ---
     const payoutMinor = Number(req.session.bank) || 0;
+const { playerAddress, 'h-captcha-response': captchaToken } = req.body;
+  logger.info('hCaptcha token received:', { captchaToken });
+  if (!captchaToken) {
+    logger.warn('Missing hCaptcha token');
+    return res.status(400).json({ error: 'Please complete the hCaptcha challenge!' });
+  }
 
-    // sanitize inputs
-    let { playerAddress, hcaptchaToken } = req.body || {};
-    if (typeof hcaptchaToken === 'string' && hcaptchaToken.length > 4096) {
-      hcaptchaToken = hcaptchaToken.slice(0, 4096);
+  let captchaResponse;
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      captchaResponse = await hcaptcha.verify(process.env.HCAPTCHA_SECRET, captchaToken, { host: 'https://hcaptcha.com' });
+      logger.info('hCaptcha verification response (attempt ' + attempt + '):', { success: captchaResponse.success, errorCodes: captchaResponse['error-codes'] });
+      break;
+    } catch (error) {
+      logger.error('hCaptcha verification error (attempt ' + attempt + '):', { error });
+      if (attempt === 3) throw error;
+      await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
     }
+  }
+  if (!captchaResponse.success) {
+    logger.warn('hCaptcha verification failed after retries', { errorCodes: captchaResponse['error-codes'] });
+    return res.status(400).json({ error: 'hCaptcha verification failed! Error: ' + (captchaResponse['error-codes'] || 'Unknown') });
+  }
 
     // basic checks
     if (!payoutMinor || payoutMinor <= 0) {
@@ -631,30 +648,7 @@ app.post('/api/payout', async (req, res) => {
       const wait = PAYOUT_COOLDOWN_MS - (Date.now() - lastAt);
       return res.status(429).json({ error: 'address_cooldown', retryInMs: wait });
     }
-
-    // hCaptcha
-    const captcha = await hcaptcha.verify(process.env.HCAPTCHA_SECRET, hcaptchaToken, req.ip);
-    if (!captcha.success) return res.status(400).json({ error: 'Captcha failed' });
-    if (process.env.HCAPTCHA_HOSTNAME && captcha.hostname !== process.env.HCAPTCHA_HOSTNAME) {
-      return res.status(400).json({ error: 'Captcha host mismatch' });
-    }
-    if (usedCaptchaTokens.has(hcaptchaToken)) {
-      return res.status(400).json({ error: 'Captcha token already used' });
-    }
     usedCaptchaTokens.add(hcaptchaToken);
-
-    // --- amount logic ---
-    // MAX_PAYOUT must be in MINOR units (KIBL * 100)
-    const maxPayoutMinor = Number(MAX_PAYOUT) > 0 ? Number(MAX_PAYOUT) : Number.MAX_SAFE_INTEGER;
-    const sendMinor      = Math.min(payoutMinor, maxPayoutMinor);
-
-    // convert to WHOLE KIBL for the RPC (floor to avoid fractional sends)
-    const sendWholeKibl  = Math.floor(sendMinor / 100);
-
-    // enforce min-withdraw of 1 KIBL so we don’t attempt a 0-amount RPC
-    if (sendWholeKibl <= 0) {
-      return res.status(400).json({ error: 'Minimum 1 KIBL required to withdraw' });
-    }
 
     // --- RPC send ---
     const rpcUrl = process.env.RPC_URL || `http://localhost:${process.env.RPC_PORT || 7227}`;
@@ -668,7 +662,7 @@ app.post('/api/payout', async (req, res) => {
       jsonrpc: '1.0',
       id: 'kibl',
       method: 'token',
-      params: ['send', process.env.KIBL_GROUP_ID, playerAddress, String(sendWholeKibl)]
+      params: ['send', process.env.KIBL_GROUP_ID, playerAddress, String(payoutMinor)]
     });
 
     let txId = null;
