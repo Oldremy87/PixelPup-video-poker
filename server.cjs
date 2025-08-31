@@ -20,6 +20,25 @@ app.set('trust proxy', 1);
 
 // ----- ENV / MODE -----
 const isProd = process.env.NODE_ENV === 'production' || !!process.env.RENDER;
+function must(name) {
+  const v = process.env[name];
+  if (!v) throw new Error(`Missing required env: ${name}`);
+  return v;
+}
+
+function mustBeURL(name) {
+  const v = must(name);
+  try { new URL(v); } catch (e) {
+    throw new Error(`Invalid URL in ${name}: ${v}`);
+  }
+  return v;
+}
+
+// Validate only what you truly need at startup:
+if (process.env.RPC_URL) mustBeURL('RPC_URL');   // allow optional, but validate if present
+must('SESSION_SECRET');
+if (process.env.DATABASE_URL) mustBeURL('DATABASE_URL'); // pg also accepts connection strings
+
 const hasDb = !!process.env.DATABASE_URL;
 
 // ----- DB POOL (accept self-signed cert on Render) -----
