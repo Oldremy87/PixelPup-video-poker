@@ -541,9 +541,9 @@ app.post('/api/daily-reward', rewardLimiter, async (req, res) => {
   try {
     ensureBank(req); // guarantees req.session.bank is a finite number
 
-    const now      = Date.now();
-    const last     = Number(req.session.lastDailyRewardAt) || 0;
-    const elapsed  = now - last;
+    const now     = Date.now();
+    const last    = Number(req.session.lastDailyRewardAt) || 0;
+    const elapsed = now - last;
 
     if (elapsed < ONE_DAY_MS) {
       return res.status(429).json({
@@ -557,10 +557,25 @@ app.post('/api/daily-reward', rewardLimiter, async (req, res) => {
     // award in MINOR units; front-end divides by 100 when displaying KIBL
     const DAILY_REWARD = 100 * 100; // 100 KIBL → minor units
 
+    // Update session
     req.session.bank = (Number(req.session.bank) || 0) + DAILY_REWARD;
     req.session.lastDailyRewardAt = now;
 
-    // persist session before replying
+    // Mirror to DB (cap-safe); do NOT fail the request if DB write has an issue
+    try {
+      await getOrCreateUser(req.uid);
+      const p = await db();
+      const cap = Number(process.env.BBANK_CAP ?? process.env.BANK_CAP ?? BANK_CAP ?? 5_000_000);
+      await p.query(
+        'UPDATE user_stats SET bank_minor = LEAST(bank_minor + $2, $3), last_seen_at = now() WHERE user_id = $1',
+        [req.uid, DAILY_REWARD, cap]
+      );
+    } catch (e) {
+      logger.error('db bank increment failed on daily', { e: String(e) });
+      // continue; session already updated so user still gets reward
+    }
+
+    // Persist session before replying
     await new Promise((resolve, reject) => {
       if (typeof req.session.save === 'function') {
         req.session.save(err => (err ? reject(err) : resolve()));
@@ -575,11 +590,13 @@ app.post('/api/daily-reward', rewardLimiter, async (req, res) => {
       sessionBalance: req.session.bank,  // minor units
       nextClaimAt: now + ONE_DAY_MS
     });
+
   } catch (err) {
     // don’t leak internals
     return res.status(500).json({ ok: false, error: 'server_error' });
   }
 });
+
 
 
 // =================== Payout (minor units throughout) ===================
@@ -601,8 +618,6 @@ const payoutLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false
 });
-app.use('/api/payout', payoutLimiter);
-
 app.use('/api/payout', payoutLimiter);
 
 app.post('/api/payout', async (req, res) => {
@@ -633,6 +648,7 @@ app.post('/api/payout', async (req, res) => {
         logger.info(`hCaptcha verify attempt ${attempt}:`, {
           success: captchaResponse.success,
           errorCodes: captchaResponse['error-codes']
+          
         });
         break;
       } catch (err) {
@@ -723,6 +739,16 @@ app.post('/api/payout', async (req, res) => {
       amountMinor: sendMinor,
       amountWhole: sendWholeKibl
     });
+    try {
+  await getOrCreateUser(req.uid); // ensure rows exist
+  const p = await db();
+  await p.query(
+    'UPDATE user_stats SET bank_minor = GREATEST(bank_minor - $2, 0), last_seen_at = now() WHERE user_id = $1',
+    [req.uid, sendMinor]
+  );
+} catch (e) {
+  logger.error('db bank decrement failed after payout', { e: String(e) });
+}
 
     return res.json({
       success: true,
