@@ -4,7 +4,7 @@
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>PixelPup Video Poker</title>
-  <script src="https://hcaptcha.com/1/api.js" async defer></script>
+  <script src="https://hcaptcha.com/1/api.js?onload=onHCaptchaLoad&render=explicit" async defer></script>
   <style>
     /* ===== Retro PixelPup theme (CSP-safe, no external fonts) ===== */
     :root{
@@ -336,6 +336,8 @@
     <div class="field">
       <label>Human check</label>
       <div class="h-captcha" data-sitekey="170a6dc4-35b6-4266-a2ce-6f3eb8c85d9c"></div>
+      <div id="payoutCaptcha" class="h-captcha" data-size="invisible"></div>
+
     </div>
     <div class="row">
       <button class="btn btn-primary" id="ClaimPayout" type="button" aria-label="Claim Payout">FEED ME! 🐾</button>
@@ -468,6 +470,68 @@ function showSimulatedDeal(duration = 1400) {
   });
   // guarantee the placeholders stay visible for at least `duration`
   return wait(duration);
+}
+const HCAPTCHA_SITE_KEY = '170a6dc4-35b6-4266-a2ce-6f3eb8c85d9c';
+
+let widgetId = null;
+let pendingResolve = null;
+
+// Called by the hCaptcha script tag (?onload=onHCaptchaLoad)
+function onHCaptchaLoad() {
+  const el = document.getElementById('payoutCaptcha');
+  if (!el) {
+    console.error('Missing #payoutCaptcha element in DOM.');
+    return;
+  }
+  if (widgetId !== null) return; // already rendered (idempotent)
+
+  widgetId = hcaptcha.render(el, {
+    sitekey: HCAPTCHA_SITE_KEY,
+    size: 'invisible',
+    callback: (token) => {
+      if (pendingResolve) {
+        pendingResolve(token);
+        pendingResolve = null;
+      }
+    },
+    'error-callback': () => {
+      if (pendingResolve) {
+        pendingResolve(Promise.reject(new Error('hCaptcha error')));
+        pendingResolve = null;
+      }
+    },
+    'close-callback': () => {
+      if (pendingResolve) {
+        pendingResolve(Promise.reject(new Error('hCaptcha closed')));
+        pendingResolve = null;
+      }
+    }
+  });
+}
+
+function waitForWidget() {
+  return new Promise((resolve) => {
+    if (widgetId !== null) return resolve(widgetId);
+    // If hcaptcha loaded but didn’t render yet, try again after DOMContentLoaded/onload
+    const check = () => {
+      if (widgetId !== null) resolve(widgetId);
+      else setTimeout(check, 50);
+    };
+    check();
+  });
+}
+
+async function getCaptchaToken() {
+  await waitForWidget();
+  return new Promise((resolve, reject) => {
+    pendingResolve = resolve;
+    try {
+      hcaptcha.execute(widgetId);
+    } catch (e) {
+      pendingResolve = null;
+      reject(e);
+    }
+  });
 }
 async function loadProfile(){
   try{
