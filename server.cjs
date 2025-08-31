@@ -609,16 +609,17 @@ app.post('/api/payout', async (req, res) => {
 
     // --- read authoritative session balance (minor units) ---
     const payoutMinor = Number(req.session.bank) || 0;
-const { playerAddress, 'h-captcha-response': captchaToken } = req.body;
+
+  let captchaResponse;
+  const { playerAddress, 'h-captcha-response': captchaToken } = req.body;
   logger.info('hCaptcha token received:', { captchaToken });
   if (!captchaToken) {
     logger.warn('Missing hCaptcha token');
     return res.status(400).json({ error: 'Please complete the hCaptcha challenge!' });
   }
-
-  let captchaResponse;
   for (let attempt = 1; attempt <= 3; attempt++) {
     try {
+      
       captchaResponse = await hcaptcha.verify(process.env.HCAPTCHA_SECRET, captchaToken, { host: 'https://hcaptcha.com' });
       logger.info('hCaptcha verification response (attempt ' + attempt + '):', { success: captchaResponse.success, errorCodes: captchaResponse['error-codes'] });
       break;
@@ -648,7 +649,7 @@ const { playerAddress, 'h-captcha-response': captchaToken } = req.body;
       const wait = PAYOUT_COOLDOWN_MS - (Date.now() - lastAt);
       return res.status(429).json({ error: 'address_cooldown', retryInMs: wait });
     }
-    usedCaptchaTokens.add(hcaptchaToken);
+    usedCaptchaTokens.add(captchaToken);
 
     // --- RPC send ---
     const rpcUrl = process.env.RPC_URL || `http://localhost:${process.env.RPC_PORT || 7227}`;
