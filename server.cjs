@@ -400,29 +400,34 @@ async function saveAfterDraw(uid, { creditMinor, isWin, isRoyal, flags }) {
 app.post('/api/draw', drawLimiter, async (req, res) => {
   try {
     const ip = getClientIp(req);
-    ensureBank(req);
+    ensureBank(req); // make sure req.session.bank is a finite number
 
     // throttle per session (handle first-draw case)
     const now = Date.now();
-    if (now - (req.session.lastDrawAt || 0) < DRAW_MIN_MS) {
-      return res.status(429).json({ ok:false, error:'too_fast' });
+    const lastDrawAt = Number(req.session.lastDrawAt) || 0;
+    if (now - lastDrawAt < DRAW_MIN_MS) {
+      return res.status(429).json({ ok: false, error: 'too_fast' });
     }
-    req.session.lastDrawAt = now;
-    const rec = handsByIp.get(ip);
-    if (!rec) return res.status(429).json({ ok:false, error:'use_start_hand_first' });
 
+    // Require a started hand (paired with /api/start-hand)
+    const rec = handsByIp.get(ip);
+    if (!rec) {
+      return res.status(429).json({ ok: false, error: 'use_start_hand_first' });
+    }
+
+    // Validate payload & draw state
     const { held } = req.body || {};
     if (!Array.isArray(held) || held.length !== 5) {
-      return res.status(400).json({ ok:false, error:'bad_hold_array' });
+      return res.status(400).json({ ok: false, error: 'bad_hold_array' });
     }
     if (!req.session.currentHand || !Array.isArray(req.session.deck)) {
-      return res.status(400).json({ ok:false, error:'deal_first' });
+      return res.status(400).json({ ok: false, error: 'deal_first' });
     }
     if (req.session.hasDrawn) {
-      return res.status(429).json({ ok:false, error:'already_drawn' });
+      return res.status(429).json({ ok: false, error: 'already_drawn' });
     }
 
-    // replace only non-held cards
+    // ---- Perform draw: replace only non-held cards ----
     let hand = req.session.currentHand.slice();
     let deck = req.session.deck.slice();
     for (let i = 0; i < 5; i++) {
@@ -432,95 +437,161 @@ app.post('/api/draw', drawLimiter, async (req, res) => {
       }
     }
 
-    const result  = evalHand(hand);
+    // Evaluate hand
+    const result = evalHand(hand);
     const isWin   = (typeof result.isWin   === 'boolean') ? result.isWin   : (result.payout > 0);
     const isRoyal = (typeof result.isRoyal === 'boolean') ? result.isRoyal : !!result.royal;
 
-    let credit = result.payout * TOKENS_PER_CREDIT * 100; // minor units
+    // ---------- CREDIT & ACHIEVEMENTS (minor units) ----------
+    const toInt  = (v) => Math.floor(Number(v) || 0);
+    const clamp0 = (v) => Math.max(0, toInt(v));
 
-    await getOrCreateUser(req.uid);
+    // 1 credit => N KIBL; BANK_CAP must be MINOR units (KIBL*100)
+    const TOKENS_PER_CREDIT = toInt(process.env.TOKENS_PER_CREDIT || 1);
+    const BANK_LIMIT = toInt(process.env.BANK_CAP ?? BANK_CAP);
+
+    // base credit from paytable (credits → KIBL → minor units)
+    let credit = clamp0((result.payout || 0) * TOKENS_PER_CREDIT * 100);
 
     // ensure session structures exist
-    if (!req.session.stats)         req.session.stats = { wins: 0, royalFlushes: 0 };
-    if (!req.session.achievements)  req.session.achievements = {};
+    req.session.stats        ||= { wins: 0, royalFlushes: 0 };
+    req.session.achievements ||= {};
     const A = req.session.achievements;
 
-    const bonuses   = [];
-    const achFlags  = [];
-    const pointsEarned = result.payout || 0; // paytable credits only
+    const bonuses      = [];   // [{ name, amount (minor) }]
+    const achFlags     = [];   // e.g., ['first_win', ...]
+    const pointsEarned = clamp0(result.payout || 0); // leaderboard points in "credits"
 
-    function addBonus(name, amount, flag) {
-      bonuses.push({ name, amount });
-      credit += amount;
+    function addBonus(name, kibls, flag) {
+      const amountMinor = clamp0(kibls * 100);
+      if (amountMinor <= 0) return;
+      bonuses.push({ name, amount: amountMinor });
+      credit += amountMinor;
       if (flag) achFlags.push(flag);
     }
 
+    // update stats
     if (isWin)   req.session.stats.wins++;
     if (isRoyal) req.session.stats.royalFlushes++;
 
-    if (isWin && !A.firstWin)                      { addBonus('firstWin', 100*100,    'first_win');  A.firstWin = true; }
-    if (req.session.stats.wins >= 10 && !A['10Wins'])  { addBonus('10Wins', 1000*100,  'w10');        A['10Wins'] = true; }
-    if (req.session.stats.wins >= 25 && !A['25Wins'])  { addBonus('25Wins', 2500*100,  'w25');        A['25Wins'] = true; }
-    if (req.session.stats.wins >= 50 && !A['50Wins'])  { addBonus('50Wins', 5000*100,  'w50');        A['50Wins'] = true; }
-    if (isRoyal && !A.royalFlush)                  { addBonus('royalFlush', 50000*100,'royal_win');  A.royalFlush = true; }
+    // achievements (values below are in KIBL; converted in addBonus)
+    if (isWin && !A.firstWin)                           { addBonus('firstWin', 100,    'first_win'); A.firstWin = true; }
+    if (req.session.stats.wins >= 10 && !A['10Wins'])   { addBonus('10Wins',  1000,    'w10');       A['10Wins'] = true; }
+    if (req.session.stats.wins >= 25 && !A['25Wins'])   { addBonus('25Wins',  2500,    'w25');       A['25Wins'] = true; }
+    if (req.session.stats.wins >= 50 && !A['50Wins'])   { addBonus('50Wins',  5000,    'w50');       A['50Wins'] = true; }
+    if (isRoyal && !A.royalFlush)                       { addBonus('royalFlush', 50000,'royal_win'); A.royalFlush = true; }
 
-    // apply to session + finalize round
-    req.session.bank = Math.min(BANK_CAP, req.session.bank + credit);
-    req.session.currentHand = null;
-    req.session.deck = [];
-    req.session.hasDrawn = true;
+    // apply to session (minor units) + finalize round
+    const before = toInt(req.session.bank);
+    const cap    = BANK_LIMIT > 0 ? BANK_LIMIT : Number.MAX_SAFE_INTEGER;
+    const after  = Math.min(cap, before + credit);
+    req.session.bank         = after;
+    req.session.currentHand  = null;
+    req.session.deck         = [];
+    req.session.hasDrawn     = true;
+    req.session.lastDrawAt   = now; // set last draw time once the draw succeeds
 
     // persist to DB
-    await saveAfterDraw(req.uid, { creditMinor: credit, isWin, isRoyal, flags: achFlags });
+    await getOrCreateUser(req.uid);
+    await saveAfterDraw(req.uid, {
+      creditMinor: credit,
+      isWin,
+      isRoyal,
+      flags: achFlags
+    });
 
-    // leaderboard: award skill points (paytable credits)
+    // leaderboard
     if (typeof awardSeasonPoints === 'function') {
       await awardSeasonPoints(req.uid, pointsEarned);
     }
 
+    // persist session before replying
+    await new Promise((resolve, reject) => {
+      if (typeof req.session.save === 'function') {
+        req.session.save(err => (err ? reject(err) : resolve()));
+      } else {
+        resolve();
+      }
+    });
+
+    // respond (minor units; UI divides by 100)
     return res.json({
       ok: true,
       hand,
-      result,
-      credit,
-      bonuses,
-      sessionBalance: req.session.bank,
+      result: { ...result, isWin, isRoyal },
+      credit,                          // minor units
+      bonuses,                         // [{ name, amount (minor) }]
+      sessionBalance: req.session.bank,// minor units
       stats: req.session.stats,
       points: pointsEarned
     });
   } catch (err) {
     console.error('draw error', err);
-    return res.status(500).json({ ok:false, error:'draw_error' });
+    return res.status(500).json({ ok: false, error: 'draw_error' });
   }
 });
+
+
 
 
 
 const rewardLimiter = rateLimit({ windowMs: 60 * 1000, max: 12, standardHeaders: true, legacyHeaders: false });
-app.post('/api/daily-reward', rewardLimiter, (req, res) => {
-  ensureBank(req);
-  const now = Date.now();
-  const elapsed = now - (req.session.lastDailyRewardAt || 0);
-  if (elapsed < ONE_DAY_MS) {
-    return res.status(429).json({ ok:false, error:'already_claimed', retryInMs: ONE_DAY_MS - elapsed });
+// DAILY REWARD (minor units throughout)
+app.post('/api/daily-reward', rewardLimiter, async (req, res) => {
+  try {
+    ensureBank(req); // guarantees req.session.bank is a finite number
+
+    const now      = Date.now();
+    const last     = Number(req.session.lastDailyRewardAt) || 0;
+    const elapsed  = now - last;
+
+    if (elapsed < ONE_DAY_MS) {
+      return res.status(429).json({
+        ok: false,
+        error: 'already_claimed',
+        retryInMs: ONE_DAY_MS - elapsed,
+        nextClaimAt: last + ONE_DAY_MS
+      });
+    }
+
+    // award in MINOR units; front-end divides by 100 when displaying KIBL
+    const DAILY_REWARD = 100 * 100; // 100 KIBL → minor units
+
+    req.session.bank = (Number(req.session.bank) || 0) + DAILY_REWARD;
+    req.session.lastDailyRewardAt = now;
+
+    // persist session before replying
+    await new Promise((resolve, reject) => {
+      if (typeof req.session.save === 'function') {
+        req.session.save(err => (err ? reject(err) : resolve()));
+      } else {
+        resolve();
+      }
+    });
+
+    return res.json({
+      ok: true,
+      credit: DAILY_REWARD,              // minor units
+      sessionBalance: req.session.bank,  // minor units
+      nextClaimAt: now + ONE_DAY_MS
+    });
+  } catch (err) {
+    // don’t leak internals
+    return res.status(500).json({ ok: false, error: 'server_error' });
   }
-  const DAILY_REWARD = 100 * 100; // minor units
-  req.session.bank = Math.min(BANK_CAP, req.session.bank + DAILY_REWARD);
-  req.session.lastDailyRewardAt = now;
-  res.json({ ok:true, credit: DAILY_REWARD, sessionBalance: req.session.bank, nextClaimAt: now + ONE_DAY_MS });
 });
 
-// =================== Payout ===================
-// Track used captcha tokens (replay defense) and address cooldowns
-const usedCaptchaTokens = new Set();
+
+// =================== Payout (minor units throughout) ===================
+const usedCaptchaTokens   = new Set();                  // replay defense
 setInterval(() => usedCaptchaTokens.clear(), 5 * 60 * 1000);
-const lastPayoutByAddress = new Map();
+
+const lastPayoutByAddress = new Map();                  // per-address cooldown
 
 function looksLikeNexaAddress(addr = '') {
   if (typeof addr !== 'string') return false;
   if (!addr.startsWith('nexa:')) return false;
   if (addr.length > 120) return false;
-  // simple charset check
   return /^[a-z0-9:]+$/i.test(addr);
 }
 
@@ -533,49 +604,71 @@ const payoutLimiter = rateLimit({
 app.use('/api/payout', payoutLimiter);
 
 app.post('/api/payout', async (req, res) => {
-  ensureBank(req);
-const payoutAmount = req.session.bank; // authoritative server balance
-  let { playerAddress, hcaptchaToken } = req.body || {};
-  // sanitize lengths early
-  if (typeof hcaptchaToken === 'string' && hcaptchaToken.length > 4096) hcaptchaToken = hcaptchaToken.slice(0,4096);
-
-  
-  if (!payoutAmount || typeof payoutAmount !== 'number' || payoutAmount <= 0) {
-    return res.status(400).json({ error: 'No balance to withdraw' });
-  }
-  if (!looksLikeNexaAddress(playerAddress)) {
-    logger.warn('Invalid address', { ip: req.ip, playerAddress });
-    return res.status(400).json({ error: 'Invalid Nexa address' });
-  }
-
-  // per-address cooldown
-  const lastAt = lastPayoutByAddress.get(playerAddress) || 0;
-  if (Date.now() - lastAt < PAYOUT_COOLDOWN_MS) {
-    const wait = PAYOUT_COOLDOWN_MS - (Date.now() - lastAt);
-    return res.status(429).json({ error: 'address_cooldown', retryInMs: wait });
-  }
-const captcha = await hcaptcha.verify(process.env.HCAPTCHA_SECRET, hcaptchaToken, req.ip);
-if (!captcha.success) return res.status(400).json({ error: 'Captcha failed' });
-if (process.env.HCAPTCHA_HOSTNAME && captcha.hostname !== process.env.HCAPTCHA_HOSTNAME) {
-  return res.status(400).json({ error: 'Captcha host mismatch' });
-}
-// replay defense
-if (usedCaptchaTokens.has(hcaptchaToken)) return res.status(400).json({ error: 'Captcha token already used' });
-usedCaptchaTokens.add(hcaptchaToken);
-
-
-  // clamp to maximum per-claim
-  const sendAmount = Math.min(payoutAmount, MAX_PAYOUT);
-
   try {
-    const rpcUrl = process.env.RPC_URL ? process.env.RPC_URL : `http://localhost:${process.env.RPC_PORT || 7227}`;
+    ensureBank(req); // guarantees req.session.bank is a finite number
+
+    // --- read authoritative session balance (minor units) ---
+    const payoutMinor = Number(req.session.bank) || 0;
+
+    // sanitize inputs
+    let { playerAddress, hcaptchaToken } = req.body || {};
+    if (typeof hcaptchaToken === 'string' && hcaptchaToken.length > 4096) {
+      hcaptchaToken = hcaptchaToken.slice(0, 4096);
+    }
+
+    // basic checks
+    if (!payoutMinor || payoutMinor <= 0) {
+      return res.status(400).json({ error: 'No balance to withdraw' });
+    }
+    if (!looksLikeNexaAddress(playerAddress)) {
+      logger.warn('Invalid address', { ip: req.ip, playerAddress });
+      return res.status(400).json({ error: 'Invalid Nexa address' });
+    }
+
+    // per-address cooldown
+    const lastAt = lastPayoutByAddress.get(playerAddress) || 0;
+    if (Date.now() - lastAt < PAYOUT_COOLDOWN_MS) {
+      const wait = PAYOUT_COOLDOWN_MS - (Date.now() - lastAt);
+      return res.status(429).json({ error: 'address_cooldown', retryInMs: wait });
+    }
+
+    // hCaptcha
+    const captcha = await hcaptcha.verify(process.env.HCAPTCHA_SECRET, hcaptchaToken, req.ip);
+    if (!captcha.success) return res.status(400).json({ error: 'Captcha failed' });
+    if (process.env.HCAPTCHA_HOSTNAME && captcha.hostname !== process.env.HCAPTCHA_HOSTNAME) {
+      return res.status(400).json({ error: 'Captcha host mismatch' });
+    }
+    if (usedCaptchaTokens.has(hcaptchaToken)) {
+      return res.status(400).json({ error: 'Captcha token already used' });
+    }
+    usedCaptchaTokens.add(hcaptchaToken);
+
+    // --- amount logic ---
+    // MAX_PAYOUT must be in MINOR units (KIBL * 100)
+    const maxPayoutMinor = Number(MAX_PAYOUT) > 0 ? Number(MAX_PAYOUT) : Number.MAX_SAFE_INTEGER;
+    const sendMinor      = Math.min(payoutMinor, maxPayoutMinor);
+
+    // convert to WHOLE KIBL for the RPC (floor to avoid fractional sends)
+    const sendWholeKibl  = Math.floor(sendMinor / 100);
+
+    // enforce min-withdraw of 1 KIBL so we don’t attempt a 0-amount RPC
+    if (sendWholeKibl <= 0) {
+      return res.status(400).json({ error: 'Minimum 1 KIBL required to withdraw' });
+    }
+
+    // --- RPC send ---
+    const rpcUrl = process.env.RPC_URL || `http://localhost:${process.env.RPC_PORT || 7227}`;
+    if (!process.env.RPC_USER || !process.env.RPC_PASSWORD || !process.env.KIBL_GROUP_ID) {
+      logger.error('RPC or token env not configured');
+      return res.status(500).json({ error: 'Server configuration error' });
+    }
     const auth = Buffer.from(`${process.env.RPC_USER}:${process.env.RPC_PASSWORD}`).toString('base64');
 
     const body = JSON.stringify({
-      jsonrpc: "1.0",
-      id: "kibl",
-      method: "token",
-      params: ["send", process.env.KIBL_GROUP_ID, playerAddress, String(sendAmount)]
+      jsonrpc: '1.0',
+      id: 'kibl',
+      method: 'token',
+      params: ['send', process.env.KIBL_GROUP_ID, playerAddress, String(sendWholeKibl)]
     });
 
     let txId = null;
@@ -583,7 +676,10 @@ usedCaptchaTokens.add(hcaptchaToken);
       try {
         const response = await fetch(rpcUrl, {
           method: 'POST',
-          headers: { 'Content-Type': 'text/plain', 'Authorization': `Basic ${auth}` },
+          headers: {
+            'Content-Type': 'text/plain',
+            'Authorization': `Basic ${auth}`
+          },
           body
         });
         const data = await response.json();
@@ -597,17 +693,38 @@ usedCaptchaTokens.add(hcaptchaToken);
       }
     }
 
-    // success → zero session bank & set cooldown
+    // --- success: zero the bank, set cooldown, persist session ---
     req.session.bank = 0;
     lastPayoutByAddress.set(playerAddress, Date.now());
 
-    logger.info('Payout success', { ip: req.ip, txId, playerAddress, amount: sendAmount });
-    return res.json({ success: true, txId, message: `Sent ${sendAmount} KIBL to ${playerAddress}` });
+    await new Promise((resolve, reject) => {
+      if (typeof req.session.save === 'function') {
+        req.session.save(err => (err ? reject(err) : resolve()));
+      } else {
+        resolve();
+      }
+    });
+
+    logger.info('Payout success', {
+      ip: req.ip,
+      txId,
+      playerAddress,
+      amountMinor: sendMinor,
+      amountWhole: sendWholeKibl
+    });
+
+    // show user what actually went on-chain (whole KIBL)
+    return res.json({
+      success: true,
+      txId,
+      message: `Sent ${sendWholeKibl} KIBL to ${playerAddress}`
+    });
   } catch (error) {
     logger.error('Token send failed', { error: String(error) });
     return res.status(500).json({ error: 'Failed to send tokens due to a server issue. Please try again later.' });
   }
 });
+
 
 // =================== Root ===================
 app.get('/', (_req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
