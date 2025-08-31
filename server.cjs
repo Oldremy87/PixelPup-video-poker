@@ -724,7 +724,17 @@ app.post('/api/payout', async (req, res) => {
     return res.status(500).json({ error: 'Failed to send tokens due to a server issue. Please try again later.' });
   }
 });
+app.post('/api/debug-hcaptcha', express.json(), async (req, res) => {
+  const { hcaptchaToken } = req.body || {};
+  if (!hcaptchaToken) return res.status(400).json({ ok:false, message:'no token' });
 
+  try {
+    const r = await require('hcaptcha').verify(process.env.HCAPTCHA_SECRET, hcaptchaToken, req.ip);
+    return res.json({ ok: r.success, verify: r });
+  } catch (e) {
+    return res.status(500).json({ ok:false, error: String(e) });
+  }
+});
 
 // =================== Root ===================
 app.get('/', (_req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
