@@ -826,7 +826,7 @@ async function onClaimPayout() {
     totalPayout = data.remainingKIBL ?? 0;
     payoutEl.textContent = `Total Payout: ${totalPayout} KIBL`;
     payoutBtn.disabled = (totalPayout === 0);
-    await (window.loadProfile?.());
+    try {window.loadProfile?.();} catch {}
     // Reset so the user can claim again in the future
     try { window.hcaptcha?.reset?.(); } catch {}
 
