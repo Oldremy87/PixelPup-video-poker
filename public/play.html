@@ -1,0 +1,1016 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>PixelPup Video Poker</title>
+  <script src="https://hcaptcha.com/1/api.js" async defer></script>
+  <style>
+    /* ===== Retro PixelPup theme (CSP-safe, no external fonts) ===== */
+    :root{
+      --bg: #0b0f19;
+      --panel: #111827;
+      --text: #00ffc6;
+      --text-dim: #7fffe6;
+      --accent: #ffcc00;
+      --accent-2: #ff3df7;
+      --accent-3: #6ae3ff;
+      --card-bg: #222638;
+      --card-border: #3af5d9;
+      --danger: #ff5577;
+      --ok: #45ff99;
+    }
+    /* Always hide elements with [hidden], and loaders by default */
+[hidden] { display: none !important; }
+.loading { display: none !important; }     /* stays hidden until .show is added */
+.loading.show { display: block !important; }
+
+/* Visually hidden utility */
+.sr-only { 
+  position: absolute !important;
+  width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0,0,1px,1px); white-space: nowrap; border: 0;
+}
+
+    * { box-sizing: border-box; }
+    html, body { height: 100%; }
+    body {
+      margin: 0;
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+      background:
+        radial-gradient(1200px 800px at 50% -20%, #13203b 0%, #0b0f19 60%, #05070d 100%),
+        linear-gradient(180deg, #0b0f19 0%, #05070d 100%);
+      color: var(--text);
+      padding: 24px;
+    }
+
+    /* Header / Nav */
+    header { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin: 0 auto 16px; max-width: 1100px; }
+    .brand { display: flex; align-items: center; gap: 10px; letter-spacing: 0.5px; text-shadow: 0 0 10px rgba(0,255,198,0.6); }
+    .brand-badge {
+      width: 36px; height: 36px; border-radius: 10px; border: 2px solid var(--card-border);
+      box-shadow: 0 0 14px rgba(0,255,198,0.2); display: grid; place-items: center;
+      background: linear-gradient(180deg, rgba(255,255,255,0.06), rgba(255,255,255,0.02));
+      font-weight: 700; color: var(--accent);
+    }
+    nav { display: flex; gap: 10px; flex-wrap: wrap; }
+
+    .btn {
+      appearance: none; border: 0; cursor: pointer; padding: 10px 14px; border-radius: 12px;
+      color: #000; background: var(--accent); text-decoration: none;
+      box-shadow: 0 3px 0 #b59000, 0 0 12px rgba(255,204,0,0.35);
+      font-weight: 700; letter-spacing: .2px; display: inline-flex; align-items: center; gap: 8px;
+      transition: transform .06s ease, filter .12s ease, box-shadow .12s ease;
+      font-size: 12px;
+    }
+    .btn:hover { transform: translateY(-1px); filter: brightness(1.05); }
+    .btn:active { transform: translateY(1px); }
+    .btn:disabled { background: #555; color: #111; box-shadow: none; cursor: not-allowed; }
+    .btn:focus-visible { outline: 2px solid var(--accent-3); outline-offset: 2px; }
+    .btn-telegram{
+      background: var(--accent-3);
+      box-shadow: 0 3px 0 #2aa7bf, 0 0 14px rgba(106,227,255,0.35);
+      color: #021018;
+    }
+    .btn-primary{
+      background: var(--accent-2);
+      color: #120016;
+      box-shadow: 0 3px 0 #a2259c, 0 0 14px rgba(255,61,247,0.35);
+    }
+    .btn-ghost{
+      background: linear-gradient(180deg, rgba(255,255,255,0.06), rgba(255,255,255,0.02));
+      color: var(--text);
+      border: 1px solid rgba(58,245,217,0.35);
+      box-shadow: 0 0 12px rgba(0,255,198,0.18) inset, 0 0 12px rgba(0,255,198,0.12);
+    }
+
+    /* Layout panels */
+    .wrap { max-width: 1100px; margin: 0 auto; }
+    .hud { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; margin-bottom: 16px; }
+    .panel {
+      background: linear-gradient(180deg, rgba(255,255,255,0.04), rgba(255,255,255,0.01));
+      border: 1px solid rgba(58,245,217,0.3);
+      border-radius: 16px; padding: 16px;
+      backdrop-filter: blur(4px);
+      box-shadow: 0 0 24px rgba(0,255,198,0.06) inset, 0 0 24px rgba(0,255,198,0.08);
+    }
+    .controls { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-top: 8px; }
+
+    .readout { color: var(--text-dim); font-size: 12px; margin: 4px 0; }
+
+    /* Hand area (real cards + simulated placeholders share this) */
+    .card-hand {
+      display: flex;
+      flex-wrap: nowrap;
+      justify-content: center;
+      align-items: flex-start;
+      gap: 10px;
+      min-height: 170px;
+      margin: 12px auto 0;
+      max-width: 1100px;
+    }
+@keyframes pulse {
+  from { opacity: .75; transform: translateY(0); }
+  to   { opacity: 1;   transform: translateY(-1px); }
+}
+    /* Card visual */
+    /* Card + placeholder sizing and layout */
+.card, .placeholder {
+  width: 100px;
+  height: 172px;                 /* a little taller so label + button always fit */
+  border-radius: 10px;
+  background: var(--card-bg);
+  color: #fff;
+  border: 2px solid var(--card-border);
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto auto; /* image shrinks first, label, then button */
+  align-items: center;
+  justify-items: center;
+  padding: 8px;
+  overflow: hidden;              /* keeps rounded corners clean */
+  position: relative;
+  text-align: center;
+  box-shadow: 0 0 20px rgba(0,255,198,0.1);
+}
+
+/* Dealing placeholders centered and unbroken */
+.placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-style: dashed;
+  font-size: 12px;
+  letter-spacing: .5px;
+  color: var(--text-dim);
+  animation: pulse .9s ease-in-out infinite alternate;
+  white-space: nowrap;           /* never break “Dealing...” into “...ling” */
+  padding: 0 6px;
+}
+
+.card img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;           /* scale art without overflow */
+  display: block;
+}
+
+/* 2-line clamp for long names like “Queen of Diamonds” */
+.card p {
+  margin: 4px 0 0 0;
+  font-size: 11px;
+  line-height: 1.05;
+  padding: 0 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;         /* clamp to 2 lines */
+  line-clamp: 2;                 /* standard property for compatibility */
+  -webkit-box-orient: vertical;
+}
+
+.card button {
+  width: 100%;
+  min-height: 30px;              /* reliable tap target */
+  font-size: 11px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  margin-top: 6px;
+  background: var(--accent-2);
+  color: #090014;
+  box-shadow: 0 2px 0 #a2259c, 0 0 10px rgba(255,61,247,0.35);
+}
+
+/* Held badge */
+.card.held::after {
+  content: 'HELD';
+  position: absolute;
+  top: 6px; left: 6px;
+  font-size: 10px;
+  padding: 2px 6px;
+  background: var(--accent);
+  color: #000;
+  border-radius: 6px;
+  box-shadow: 0 0 10px rgba(255,204,0,0.4);
+}
+
+@media (max-width: 600px) {
+  .card, .placeholder { width: 80px; height: 138px; }
+  .card p { font-size: 10px; }
+  .card button { min-height: 28px; font-size: 10px; }
+  .card-hand { min-height: 140px; }
+}
+/* Age gate: focus ring for accessibility */
+#ageGate :focus-visible { outline: 2px solid var(--accent-3); outline-offset: 2px; }
+
+/* Reduce panel text width for readability on narrow screens */
+@media (max-width: 420px){
+  #ageGate .brand h1{ font-size: 1.2rem; }
+}
+
+
+
+    h1 { margin: 0 0 10px; }
+        .faucet-form { display: grid; gap: 10px; }
+    .field { display: grid; gap: 6px; }
+    label { color: var(--text-dim); font-size: 14px; }
+    input[type="text"]{
+      width: 100%; padding: 12px 14px; border-radius: 12px; border: 1px solid rgba(58,245,217,0.35);
+      background: #0f1425; color: var(--text);
+      box-shadow: inset 0 0 14px rgba(0,255,198,0.08);
+    }
+
+    .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+
+    .status {
+      padding: 10px 12px; border-radius: 12px;
+      background: #0f1425; border: 1px solid rgba(58,245,217,0.25);
+      color: var(--text-dim);
+    }
+    .status.ok { border-color: rgba(69,255,153,0.6); color: var(--ok); }
+    .status.err { border-color: rgba(255,85,119,0.65); color: var(--danger); }
+
+    footer { opacity: .9; color: var(--text-dim); font-size: 12px; text-align: center; padding: 14px 0 6px; }
+    .hud { 
+  display: grid; 
+  grid-template-columns: 2fr 1fr; 
+  gap: 12px; 
+}
+@media (max-width: 900px) {
+  .hud { grid-template-columns: 1fr; }
+}
+
+/* Table panel should feel featured */
+.panel-table { 
+  grid-column: 1 / 2; 
+}
+.panel-claim { 
+  grid-column: 2 / 3; 
+}
+
+/* Make the actual play area larger and breathe */
+.card-hand {
+  min-height: 220px;
+  margin-top: 16px;
+}
+@media (min-width: 900px) {
+  .card, .placeholder { width: 120px; height: 196px; }
+  .card-hand { min-height: 240px; }
+}
+/* Keep claim pieces tidy */
+.claim-block { margin-top: 12px; }
+.leaderboard { margin: 8px 0 0; padding-left: 20px; }
+.leaderboard li { display: flex; justify-content: space-between; padding: 4px 0; }
+.leaderboard .user { opacity: 0.8; }
+.leaderboard .pts { font-weight: 700; }
+
+    </style>
+</head>
+<script>
+  function enterSite() {
+    localStorage.setItem('ageVerified', 'true');
+    document.getElementById('ageGate').style.display = 'none';
+  }
+  window.addEventListener('load', () => {
+    if (localStorage.getItem('ageVerified') === 'true') {
+      document.getElementById('ageGate').style.display = 'none';
+    }
+  });
+</script>
+
+<body>
+ <!-- Themed Age Gate Overlay -->
+<div id="ageGate"
+     role="dialog"
+     aria-labelledby="ageTitle"
+     aria-describedby="ageDesc"
+     aria-modal="true"
+     style="position:fixed; inset:0; z-index:9999; display:none;">
+  <!-- Backdrop -->
+  <div class="age-backdrop" style="position:absolute; inset:0;
+    background:
+      radial-gradient(1200px 800px at 50% -20%, #13203b 0%, #0b0f19 60%, #05070d 100%),
+      linear-gradient(180deg, #0b0f19 0%, #05070d 100%);
+    opacity:.98;"></div>
+<div id="cookieBar" class="cookie-bar" role="region" aria-label="Cookie notice" hidden>
+  <span>
+    PixelPup Poker uses cookies & session storage to keep you logged in and prevent abuse.
+    By continuing, you agree to our <a href="privacy.html">Privacy Policy</a>.
+  </span>
+  <button id="cookieAccept" class="btn">Accept</button>
+</div>
+
+  <!-- Centered panel -->
+  <div class="age-wrap" style="position:relative; height:100%; display:flex; align-items:center; justify-content:center; padding:24px;">
+    <div class="panel" style="max-width:560px; width:100%; text-align:center;">
+      <div class="brand" style="justify-content:center; margin-bottom:8px;">
+        <div class="brand-badge">KK</div>
+        <h1 id="ageTitle" style="margin:0;">PixelPup Poker Alpha</h1>
+      </div>
+      <p id="ageDesc" class="readout" style="margin:6px 0 16px;">
+        You must be <strong>18 or older</strong> to participate in this alpha test.
+      </p>
+
+      <div class="panel" style="margin: 12px 0;">
+        <p class="readout" style="margin:6px 0;">
+          This is a free alpha test. No real money, no withdrawals. Test tokens have no monetary value.
+        </p>
+        <p class="readout" style="margin:6px 0;">
+          See our <a href="disclaimer.html">Disclaimer</a>, <a href="tos.html">Terms</a>, and <a href="privacy.html">Privacy</a>.
+        </p>
+      </div>
+
+      <div class="controls" style="margin-top:12px;">
+        <button id="ageConfirm" class="btn btn-primary" type="button" aria-label="I am 18 or older">I am 18+</button>
+        <a class="btn btn-ghost" href="https://www.google.com" aria-label="Exit site">Exit</a>
+      </div>
+
+      <label class="readout" style="display:inline-flex; gap:8px; align-items:center; margin-top:10px;">
+        <input id="ageRemember" type="checkbox" style="accent-color: var(--accent);" />
+        Remember this on this device
+      </label>
+    </div>
+  </div>
+
+  <noscript>
+    <div style="position:absolute;bottom:0;left:0;right:0;text-align:center;color:white;padding:8px;background:#111827;">
+  
+    </div>
+  </noscript>
+</div>
+
+</div>
+
+    <header>
+    <nav>
+  <a class="btn btn-telegram" href="https://t.me/NexaKennelKlub" target="_blank" rel="noopener noreferrer">
+    <!-- Telegram SVG -->
+    <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" style="width:18px;height:18px;margin-right:6px;">
+      <path fill="#1C93E3" d="M12 0a12 12 0 1 0 0 24A12 12 0 0 0 12 0z"/>
+      <path fill="#fff" d="M17.9 7.4c.2-1-.8-1.3-1.6-1l-11 4.2c-.7.3-.7.8-.1 1l2.8.9 6.5-4.1c.3-.2.6-.1.4.1l-5.3 4.9-.2 3.1c.5 0 .7-.2 1-.5l1.7-1.6 2.6 1.9c.6.3 1 .1 1.1-.6l1.9-9.3z"/>
+    </svg>
+    Join Telegram
+  </a>
+
+  <a class="btn btn-ghost" href="https://x.com/Oldremy" target="_blank" rel="noopener noreferrer">
+    <!-- X SVG -->
+    <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" style="width:18px;height:18px;margin-right:6px;">
+      <path fill="currentColor" d="M18.9 2H22l-7.7 8.8L22.7 22h-7.1l-5.5-7.3L3.8 22H1l8.4-9.6L1 2h7.2l5 6.7L18.9 2zM17.6 20h1.9L7.4 4H5.6l12 16z"/>
+    </svg>
+    @Oldremy
+  </a>
+
+  <a class="btn btn-ghost" href="https://x.com/NexaKennelKlub" target="_blank" rel="noopener noreferrer">
+    <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" style="width:18px;height:18px;margin-right:6px;">
+      <path fill="currentColor" d="M18.9 2H22l-7.7 8.8L22.7 22h-7.1l-5.5-7.3L3.8 22H1l8.4-9.6L1 2h7.2l5 6.7L18.9 2zM17.6 20h1.9L7.4 4H5.6l12 16z"/>
+    </svg>
+    @NexaKennelKlub
+  </a>
+</nav>
+    <div class="brand">
+      <div class="brand-badge">KK</div>
+      <h1>PixelPup Video Poker</h1>
+    </div>
+  </header>
+
+  <div class="wrap">
+    <!-- HUD -->
+    <div class="hud">
+      <div class="panel panel-table" id="game">
+    <h1>Table</h1>
+    <div class="controls">
+      <div id="achievements" class="readout"></div>
+      <button id="deal" class="btn btn-primary" disabled>Feed the dealer</button>
+      <button id="draw" class="btn" disabled>Draw</button>
+    </div>
+    <div id="hand" class="card-hand" aria-live="polite"></div>
+    <p class="readout">Tap a card (or its Hold button) to keep it for the draw.</p>
+  </div>
+
+  <!-- RIGHT SIDEBAR: TOTAL + CLAIM + DAILY -->
+  <div class="panel panel-claim">
+    <div class="controls">
+      <button id="dailyReward" class="btn btn-ghost">Claim Daily Reward</button>
+      <p id="payoutTotal">Total Payout: 0 KIBL</p>
+      <div class="panel" id="leaderboardPanel">
+  <h2>Season Top 20 (Skill Points)</h2>
+  <ol id="leaderboardList" class="leaderboard"></ol>
+</div>
+
+    </div>
+<section id="claim" class="claim-block">
+  <h2>Claim</h2>
+  <form class="faucet-form" id="faucetForm" onsubmit="return false;" autocomplete="off">
+    <div class="field">
+      <label for="addressInput">Wallet address</label>
+      <input
+  type="text"
+  id="addressInput"
+  placeholder="Enter your Nexa address (e.g., nexa:...)"
+  aria-label="Nexa address input"
+  required
+  spellcheck="false"
+  autocapitalize="off"
+  autocomplete="off"
+  inputmode="latin"
+/>
+
+    </div>
+    <div class="field">
+      <label>Human check</label>
+      <div id="payoutCaptcha" class="h-captcha"
+     data-sitekey="170a6dc4-35b6-4266-a2ce-6f3eb8c85d9c"
+     data-size="normal"></div>
+
+    </div>
+    <div class="row">
+      <button class="btn btn-primary" id="ClaimPayout" type="button" aria-label="Claim Payout">FEED ME! 🐾</button>
+
+    </div>
+  </form>
+  <div id="loading" class="status" aria-live="polite" style="display:none;">Processing your request...</div>
+  <p id="result" aria-live="polite">Idle</p>
+</section>
+      
+    </div>
+
+  <audio id="feedSound" src="dogfood.mp3" preload="auto"></audio>
+<script>
+
+document.addEventListener('DOMContentLoaded', async () => {
+  try {
+    await fetchCsrf();
+    dealBtn.disabled = false;
+    await (window.loadProfile?.());
+    await (window.loadLeaderboard?.());
+  } catch {
+    alert('Could not initialize security token. Refresh to try again.');
+  }
+});
+  // ---- constants so we don't typo ids/paths ----
+const IDS = Object.freeze({
+  payout: 'payoutTotal',
+  achievements: 'achievements',
+  deal: 'deal',
+  draw: 'draw',
+  daily: 'dailyReward',
+  claimButton: 'ClaimPayout',
+  hand: 'hand',
+  address: 'addressInput',
+  loading: 'loading',
+  leaderboardList: 'leaderboardList'
+});
+let __csrf = null;
+  async function fetchCsrf() {
+    const r = await fetch('/api/csrf', { credentials: 'include' });
+    if (!r.ok) throw new Error('CSRF bootstrap failed');
+    const { csrfToken } = await r.json();
+    __csrf = csrfToken;
+  }
+
+const API = Object.freeze({
+  csrf: '/api/csrf',
+  start: '/api/start-hand',
+  deal: '/api/deal',
+  draw: '/api/draw',
+  profile: '/api/profile',
+  leaderboard: '/api/leaderboard',
+  daily: '/api/daily-reward',
+  payout: '/api/payout'
+});
+  // ===== Get existing elements by their current ids (no renames) =====
+ const payoutBtn      = document.getElementById(IDS.claimButton);
+const addressInput   = document.getElementById(IDS.address);
+const loading        = document.getElementById(IDS.loading);
+const payoutLoading  = loading;
+const dailyRewardBtn = document.getElementById(IDS.daily);
+const dealBtn        = document.getElementById(IDS.deal);
+const drawBtn        = document.getElementById(IDS.draw);
+const payoutEl       = document.getElementById(IDS.payout);
+const achievementsEl = document.getElementById(IDS.achievements);
+const handContainer  = document.getElementById(IDS.hand);
+const feedSound = document.getElementById('feedSound');
+function postWithCsrf(input, init = {}) {
+  const baseHeaders = init.headers ? {...init.headers} : {};
+  if (init.body && !baseHeaders['Content-Type']) baseHeaders['Content-Type'] = 'application/json';
+  const makeReq = async () => fetch(input, {
+    ...init,
+    method: init.method || 'POST',
+    credentials: 'include',
+    headers: { 'x-csrf-token': __csrf, ...baseHeaders }
+  });
+  // 403 → refresh CSRF once
+  return (async () => {
+      let resp = await makeReq();
+      if (resp.status === 403) {
+      const data = await resp.clone().json().catch(()=> ({}));
+      if (data?.error === 'bad_csrf') { await fetchCsrf(); resp = await makeReq(); }
+    }
+    return resp;
+  })();
+}
+  let _busy = false;
+    function lock(btn){ _busy = true; if(btn) btn.disabled = true; }
+    function unlock(btn){ _busy = false; if(btn) btn.disabled = false; }
+
+  let totalPayout = 0;
+  const suits = ['Clubs', 'Diamonds', 'Hearts', 'Spades'];
+  const ranks = ['Ace','2','3','4','5','6','7','8','9','10','Jack','Queen','King'];
+  let deck = [];
+  let hand = [];
+  let held = [false, false, false, false, false];
+
+  let wins = parseInt(localStorage.getItem('wins')) || 0;
+  let royalFlushCount = parseInt(localStorage.getItem('royalFlushCount')) || 0;
+  let achievements = JSON.parse(localStorage.getItem('achievements')) || {};
+  let lastRewardDate = localStorage.getItem('lastRewardDate');
+
+  const achievementBonuses = { firstWin: 100, '10Wins': 1000, '25Wins': 2500, '50Wins': 5000, royalFlush: 50000 };
+
+  function show(el){ el && (el.style.display = 'block'); }
+  function hide(el){ el && (el.style.display = 'none'); }
+  const wait = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+  function clearSimulatedDeal() {
+    [...handContainer.querySelectorAll('.placeholder')].forEach(ph => ph.remove());
+  }
+
+function showSimulatedDeal(duration = 1400) {
+  handContainer.innerHTML = '';
+  const placeholders = [];
+  for (let i = 0; i < 5; i++) {
+    const ph = document.createElement('div');
+    ph.className = 'placeholder';
+    ph.textContent = 'Dealing...';
+    handContainer.appendChild(ph);
+    placeholders.push(ph);
+  }
+  // simple stagger to feel like a real deal
+  placeholders.forEach((ph, i) => {
+    setTimeout(() => {
+      ph.style.filter = 'brightness(1.15)';
+      ph.style.transform = 'translateY(-2px)';
+    }, 120 * i);
+  });
+  // guarantee the placeholders stay visible for at least `duration`
+  return wait(duration);
+}
+const HCAPTCHA_SITE_KEY = '170a6dc4-35b6-4266-a2ce-6f3eb8c85d9c';
+
+let widgetId = null;
+let pendingResolve = null;
+(function () {
+    const KEY = 'kk_cookie_consent_v1';
+    const bar = document.getElementById('cookieBar');
+    const btn = document.getElementById('cookieAccept');
+    try {
+      if (localStorage.getItem(KEY) === 'true') return;
+      bar.hidden = false;
+      btn.addEventListener('click', () => {
+        localStorage.setItem(KEY, 'true');
+        bar.hidden = true;
+      });
+    } catch {
+      // if storage blocked, just show once
+      bar.hidden = false;
+      btn.addEventListener('click', () => bar.hidden = true);
+    }
+  })();
+// Called by the hCaptcha script tag (?onload=onHCaptchaLoad)
+function onHCaptchaLoad() {
+  const el = document.getElementById('payoutCaptcha');
+  if (!el) {
+    console.error('Missing #payoutCaptcha element in DOM.');
+    return;
+  }
+  if (widgetId !== null) return; // already rendered (idempotent)
+
+  widgetId = hcaptcha.render(el, {
+    sitekey: HCAPTCHA_SITE_KEY,
+    size: 'invisible',
+    callback: (token) => {
+      if (pendingResolve) {
+        pendingResolve(token);
+        pendingResolve = null;
+      }
+    },
+    'error-callback': () => {
+      if (pendingResolve) {
+        pendingResolve(Promise.reject(new Error('hCaptcha error')));
+        pendingResolve = null;
+      }
+    },
+    'close-callback': () => {
+      if (pendingResolve) {
+        pendingResolve(Promise.reject(new Error('hCaptcha closed')));
+        pendingResolve = null;
+      }
+    }
+  });
+}
+
+function waitForWidget() {
+  return new Promise((resolve) => {
+    if (widgetId !== null) return resolve(widgetId);
+    // If hcaptcha loaded but didn’t render yet, try again after DOMContentLoaded/onload
+    const check = () => {
+      if (widgetId !== null) resolve(widgetId);
+      else setTimeout(check, 50);
+    };
+    check();
+  });
+}
+
+async function getCaptchaToken() {
+  await waitForWidget();
+  return new Promise((resolve, reject) => {
+    pendingResolve = resolve;
+    try {
+      hcaptcha.execute(widgetId);
+    } catch (e) {
+      pendingResolve = null;
+      reject(e);
+    }
+  });
+}
+async function loadProfile(){
+  try{
+    const r = await fetch(API.profile, { credentials: 'include' });
+    const d = await r.json();
+    if (!d.ok) return;
+    const bankUnits = Math.floor((d.bank||0)/100);
+    if (payoutEl) payoutEl.textContent = `Total Payout: ${bankUnits} KIBL`;
+    const ach = Object.entries(d.achievements).filter(([_,v])=>v).map(([k])=>k).join(', ');
+    if (achievementsEl) achievementsEl.textContent = ach ? `Achievements: ${ach}` : 'Achievements: —';
+  }catch{}
+}
+async function loadLeaderboard(){
+  try{
+    const r = await fetch(API.leaderboard, { credentials:'include' });
+    const d = await r.json(); if (!d.ok) return;
+    const list = document.getElementById('leaderboardList'); if (!list) return;
+    list.innerHTML = '';
+    d.entries.forEach(e=>{
+      const li = document.createElement('li');
+      const left = document.createElement('span');
+      left.textContent = `${e.rank}. `;
+      const user = document.createElement('span');
+      user.className = 'user';
+      user.textContent = e.user;      // safe
+      left.appendChild(user);
+      const right = document.createElement('span');
+      right.className = 'pts';
+      right.textContent = String(e.points);
+      li.append(left, right);
+      list.appendChild(li);
+    });
+  }catch{}
+}
+
+ function formatWait(ms) {
+  if (!Number.isFinite(ms) || ms <= 0) return 'a bit';
+  const m = Math.ceil(ms / 60000);
+  return `${m} minute${m !== 1 ? 's' : ''}`;
+}
+
+async function startGame() {
+  // 1) Start-hand gate FIRST
+  let start;
+  try {
+    start = await postWithCsrf(API.start, {
+  method: 'POST',
+  credentials: 'include',
+});
+
+  } catch {
+    alert('Network error starting hand.'); return;
+  }
+  let startData;
+  try { startData = await start.json(); } catch { startData = {}; }
+
+  if (!start.ok || !startData.ok) {
+    if (startData?.error === 'ip_limit') {
+      alert(`Play limit reached. Come back in ${formatWait(startData.retryMs)}.`);
+    } else if (startData?.error) {
+      alert(`Start-hand failed: ${startData.error}`);
+    } else {
+      alert(`Start-hand failed: ${start.statusText}`);
+    }
+    return;
+  }
+
+  // 2) Simulated deal animation (keep visible ≥1.5s)
+  const anim = showSimulatedDeal(1500);
+  try { feedSound.currentTime = 0; feedSound.play(); } catch {}
+  dealBtn.disabled = true;
+
+  // 3) Request the actual deal in parallel with the animation
+  const dealReq = postWithCsrf(API.deal, {method: 'POST',credentials: 'include'});
+  try {
+    const [resp] = await Promise.all([dealReq, anim]);
+    const data = await resp.json();
+    if (!resp.ok || !data.ok) {
+      alert('Deal failed: ' + (data.error || resp.statusText));
+      dealBtn.disabled = false;
+      return;
+    }
+    hand = data.hand || [];
+    held = [false, false, false, false, false];
+    renderHand();
+    drawBtn.disabled = false;
+  } catch (e) {
+    console.error(e);
+    alert('Deal failed.');
+    dealBtn.disabled = false;
+  }
+}
+  
+
+
+  function createDeck() {
+    deck = [];
+    for (const suit of suits) {
+      for (const rank of ranks) {
+        deck.push({ rank, suit, filename: `${rank}_of_${suit}.png`, displayText: `${rank} of ${suit}` });
+      }
+    }
+    shuffle(deck);
+  }
+
+  function shuffle(array) {
+    for (let i = array.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [array[i], array[j]] = [array[j], array[i]];
+    }
+    return array;
+  }
+
+  function renderHand() {
+    handContainer.innerHTML = '';
+    hand.forEach((card, index) => {
+      const cardDiv = document.createElement('div');
+      cardDiv.classList.add('card');
+      cardDiv.setAttribute('role', 'button');
+      cardDiv.setAttribute('tabindex', '0');
+      cardDiv.setAttribute('aria-pressed', held[index] ? 'true' : 'false');
+      cardDiv.title = held[index] ? 'Click to unhold' : 'Click to hold';
+      cardDiv.addEventListener('click', () => toggleHold(index));
+      cardDiv.addEventListener('keydown', (e) => {
+        if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); toggleHold(index); }
+      });
+
+      const img = document.createElement('img');
+      img.src = `cards/${card.filename}`;
+      img.alt = card.displayText;
+
+      const label = document.createElement('p');
+      label.textContent = card.displayText;
+
+      const holdButton = document.createElement('button');
+      holdButton.textContent = held[index] ? 'Unhold' : 'Hold';
+      holdButton.addEventListener('click', (e) => { e.stopPropagation(); toggleHold(index); });
+
+      cardDiv.appendChild(img);
+      cardDiv.appendChild(label);
+      cardDiv.appendChild(holdButton);
+      if (held[index]) cardDiv.classList.add('held');
+      handContainer.appendChild(cardDiv);
+    });
+  }
+
+  function toggleHold(i) {
+    held[i] = !held[i];
+    renderHand();
+  }
+async function draw() {
+  try {
+    const resp = await postWithCsrf(API.draw, {
+      method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ held })
+    });
+   
+    const data = await resp.json();
+
+    if (!resp.ok || !data.ok) {
+      const e = data.error || resp.statusText;
+      if (e === 'too_fast')            alert('You’re drawing too fast — wait a moment and try again.');
+      else if (e === 'deal_first')     alert('You need to Deal before you can Draw.');
+      else if (e === 'already_drawn')  alert('Round finished. Hit Deal for a new hand.');
+      else if (e === 'use_start_hand_first') alert('Please hit “Feed the dealer” to start a hand.');
+      else if (e === 'bad_hold_array') alert('Something went wrong with your holds — try again.');
+      else                              alert('Draw failed: ' + e);
+      return;
+    }
+
+    hand = data.hand; renderHand();
+    const creditUnits  = Math.floor((data.credit || 0) / 100);
+    const balanceUnits = Math.floor((data.sessionBalance || 0) / 100);
+    if (creditUnits > 0) alert(`You won ${creditUnits} KIBL this hand!`);
+    if (data.bonuses?.length) {
+      alert('Bonuses unlocked:\n' + data.bonuses.map(b => `• ${Math.floor((b.amount||0)/100)} KIBL — ${b.name}`).join('\n'));
+    }
+    if (payoutEl) payoutEl.textContent = `Total Payout: ${balanceUnits} KIBL`;
+    totalPayout = balanceUnits;
+
+    await Promise.all([loadProfile(), loadLeaderboard()]);
+    payoutBtn && (payoutBtn.disabled = (totalPayout === 0));
+    dealBtn && (dealBtn.disabled = false);
+    drawBtn && (drawBtn.disabled = true);
+  } catch (e) {
+    console.error(e);
+    alert('Draw failed.');
+  }
+}
+
+  function calculatePayout(hand) {
+    let payout = 0;
+    const rankValues = { '2':2,'3':3,'4':4,'5':5,'6':6,'7':7,'8':8,'9':9,'10':10,'Jack':11,'Queen':12,'King':13,'Ace':14 };
+    const sorted = hand.slice().sort((a,b) => rankValues[a.rank]-rankValues[b.rank]);
+    const isFlush = hand.every(c => c.suit === hand[0].suit);
+    let isStraight = sorted.every((c,i) => i===0 || rankValues[c.rank] === rankValues[sorted[i-1].rank] + 1);
+    if (!isStraight && sorted.map(c=>rankValues[c.rank]).join(',') === '2,3,4,5,14') isStraight = true; // wheel
+    const isRoyalFlush = isFlush && isStraight && sorted[4].rank === 'Ace' && sorted[0].rank === '10';
+
+    const rankCounts = {};
+    hand.forEach(c => rankCounts[c.rank] = (rankCounts[c.rank]||0)+1);
+    const counts = Object.values(rankCounts).sort((a,b)=>b-a);
+
+    if (isRoyalFlush) payout = 250;
+    else if (isStraight && isFlush) payout = 50;
+    else if (counts[0] === 4) payout = 25;
+    else if (counts[0] === 3 && counts[1] === 2) payout = 9;
+    else if (isFlush) payout = 6;
+    else if (isStraight) payout = 4;
+    else if (counts[0] === 3) payout = 3;
+    else if (counts[0] === 2 && counts[1] === 2) payout = 2;
+    else if (counts[0] === 2 && Object.keys(rankCounts).some(r => rankCounts[r] === 2 && ['Jack','Queen','King','Ace'].includes(r))) payout = 1;
+
+    return { payout, isRoyalFlush, isWin: payout > 0 };
+  }
+
+async function onDailyReward() {
+  try {
+    const res = await postWithCsrf(API.daily, { method: 'POST',
+  credentials: 'include',
+});
+    
+    const data = await res.json();
+    if (!res.ok || !data.ok) {
+      const mins = data.retryInMs ? Math.ceil(data.retryInMs/60000) : 'later';
+      alert('Daily reward already claimed. Try again in ~' + mins + ' minutes.');
+      return;
+    }
+
+    // Convert minor units -> standard units
+    const creditUnits  = Math.floor((data.credit || 0) / 100);
+    const balanceUnits = Math.floor((data.sessionBalance || 0) / 100);
+
+    alert(`Daily reward claimed: +${creditUnits} KIBL`);
+
+    // Display server balance only (already /100)
+    totalPayout = balanceUnits;
+    if (payoutEl) payoutEl.textContent = `Total Payout: ${totalPayout} KIBL`;
+    payoutBtn.disabled = (totalPayout === 0);
+  } catch (e) {
+    console.error(e);
+    alert('Failed to claim daily reward, please try again.');
+  }
+}
+
+async function onClaimPayout() {
+  if (totalPayout === 0) { alert('No payout to claim!'); return; }
+
+  const playerAddress = addressInput.value.trim();
+  if (!/^nexa:/.test(playerAddress)) {
+    alert('Please enter a valid Nexa address (nexa:...)');
+    return;
+  }
+
+  // Visible hCaptcha: ensure the user solved the challenge first
+  const token = window.hcaptcha?.getResponse?.();
+  if (!token) {
+    // nudge: focus the widget and ask the user to complete it
+    document.querySelector('#payoutCaptcha iframe')?.focus();
+    alert('Please complete the hCaptcha challenge first.');
+    return;
+  }
+
+  try {
+    show(payoutLoading);
+    payoutBtn.disabled = true;
+
+    const resp = await postWithCsrf(API.payout, {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        playerAddress,
+        'h-captcha-response': token    // <- standard field name
+      })
+    });
+
+    const data = await resp.json().catch(() => ({}));
+
+    if (!resp.ok || data.error) {
+      try { window.hcaptcha?.reset?.(); } catch {}
+      alert('Payout failed: ' + (data.error || resp.statusText));
+      return;
+    }
+
+    try { feedSound.currentTime = 0; feedSound.play(); } catch {}
+    alert(`Payout successful! Tx ID: ${data.txId}`);
+
+    totalPayout = data.remainingKIBL ?? 0;
+    payoutEl.textContent = `Total Payout: ${totalPayout} KIBL`;
+    payoutBtn.disabled = (totalPayout === 0);
+    try {window.loadProfile?.();} catch {}
+    // Reset so the user can claim again in the future
+    try { window.hcaptcha?.reset?.(); } catch {}
+
+  } catch (e) {
+    console.error('Payout failed:', e);
+    try { window.hcaptcha?.reset?.(); } catch {}
+    alert(e?.message || 'Payout failed. Try again.');
+  } finally {
+    hide(payoutLoading);
+    payoutBtn.disabled = (totalPayout === 0);
+  }
+}
+
+
+
+  function checkAchievements() {}
+    
+
+  // ===== Wire up existing buttons/ids without renaming them =====
+  dailyRewardBtn?.addEventListener('click', onDailyReward);
+  dealBtn?.addEventListener('click', startGame);
+  drawBtn?.addEventListener('click', draw);
+  payoutBtn?.addEventListener('click', onClaimPayout);
+
+  // Minor UX: address field hint border
+  addressInput.addEventListener('input', () => {
+    const v = addressInput.value.trim();
+    addressInput.style.borderColor = (v && !/^nexa:/.test(v)) ? '#ff5555' : 'rgba(58,245,217,0.35)';
+  });
+
+(() => {
+  const LS_KEY = 'ageVerified';
+  const ageGate = document.getElementById('ageGate');
+  const confirmBtn = document.getElementById('ageConfirm');
+  const rememberCb = document.getElementById('ageRemember');
+
+  // Simple focus trap inside the age gate
+  function trapFocus(e){
+    if (!ageGate || ageGate.style.display === 'none') return;
+    const f = ageGate.querySelectorAll('button, a[href], input, [tabindex]:not([tabindex="-1"])');
+    if (!f.length) return;
+    const first = f[0], last = f[f.length - 1];
+    if (e.key === 'Tab'){
+      if (e.shiftKey && document.activeElement === first){ last.focus(); e.preventDefault(); }
+      else if (!e.shiftKey && document.activeElement === last){ first.focus(); e.preventDefault(); }
+    } else if (e.key === 'Escape'){
+      // Esc doesn't bypass the gate; keep focus in dialog
+      first.focus();
+      e.preventDefault();
+    }
+  }
+
+  function showGate(){
+    ageGate.style.display = 'block';
+    document.body.style.overflow = 'hidden';
+    setTimeout(() => confirmBtn?.focus(), 0);
+    document.addEventListener('keydown', trapFocus);
+  }
+  function hideGate(){
+    ageGate.style.display = 'none';
+    document.body.style.overflow = '';
+    document.removeEventListener('keydown', trapFocus);
+  }
+
+  window.addEventListener('load', () => {
+    // Respect previous confirmation
+    const ok = localStorage.getItem(LS_KEY) === 'true' || sessionStorage.getItem(LS_KEY) === 'true';
+    if (!ok) showGate();
+  });
+
+  confirmBtn?.addEventListener('click', () => {
+    const remember = !!rememberCb?.checked;
+    (remember ? localStorage : sessionStorage).setItem(LS_KEY, 'true');
+    hideGate();
+  });
+})();
+</script>
+
+
+</script>
+<footer style="opacity:.9;color:var(--text-dim);font-size:12px;text-align:center;padding:14px 0 6px;">
+  © 2025 KIBL / PixelPup • Stay shiny 🐶✨ •
+  <a href="tos.html">Terms</a> • <a href="privacy.html">Privacy</a> • <a href="disclaimer.html">Disclaimer</a>
+</footer>
+
+</body>
+
+
+</html>

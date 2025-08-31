@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>FAQ — KennelKlub / PixelPup Poker</title>
+  <style>
+    :root{--bg:#0b0f19;--panel:#111827;--text:#00ffc6;--text-dim:#7fffe6;--accent:#ffcc00;--accent-2:#ff3df7;--accent-3:#6ae3ff;--card-bg:#222638;--card-border:#3af5d9}
+    *{box-sizing:border-box} html,body{height:100%}
+    body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;background:
+      radial-gradient(1200px 800px at 50% -20%, #13203b 0%, #0b0f19 60%, #05070d 100%),
+      linear-gradient(180deg, #0b0f19 0%, #05070d 100%);color:var(--text);padding:24px}
+    a{color:var(--accent-3); text-decoration:none}
+    header{display:flex;align-items:center;justify-content:space-between;gap:16px;margin:0 auto 16px;max-width:1100px}
+    nav{display:flex;gap:10px;flex-wrap:wrap}
+    .brand{display:flex;align-items:center;gap:10px;letter-spacing:.5px;text-shadow:0 0 10px rgba(0,255,198,.6)}
+    .brand-badge{width:36px;height:36px;border-radius:10px;border:2px solid var(--card-border);
+      box-shadow:0 0 14px rgba(0,255,198,.2);display:grid;place-items:center;background:linear-gradient(180deg,rgba(255,255,255,.06),rgba(255,255,255,.02));font-weight:700;color:var(--accent)}
+    .btn{appearance:none;border:0;cursor:pointer;padding:10px 14px;border-radius:12px;color:#000;background:var(--accent);
+      box-shadow:0 3px 0 #b59000,0 0 12px rgba(255,204,0,.35);font-weight:700;letter-spacing:.2px;display:inline-flex;align-items:center;gap:8px;font-size:12px}
+    .btn-ghost{background:linear-gradient(180deg,rgba(255,255,255,.06),rgba(255,255,255,.02));color:var(--text);
+      border:1px solid rgba(58,245,217,.35);box-shadow:0 0 12px rgba(0,255,198,.18) inset,0 0 12px rgba(0,255,198,.12)}
+    .wrap{max-width:1100px;margin:0 auto}
+    .panel{background:linear-gradient(180deg,rgba(255,255,255,.04),rgba(255,255,255,.01));border:1px solid rgba(58,245,217,.3);border-radius:16px;padding:16px}
+    .faq{display:grid;gap:12px}
+    .q{font-weight:700}
+    .a{color:var(--text-dim); font-size:14px}
+    footer{opacity:.9;color:var(--text-dim);font-size:12px;text-align:center;padding:14px 0 6px;margin-top:24px}
+  </style>
+</head>
+<body>
+  <header>
+    <nav>
+      <a class="btn btn-ghost" href="home.html">Home</a>
+      <a class="btn btn-ghost" href="play.html">Play</a>
+      <a class="btn btn-ghost" href="tos.html">Terms</a>
+      <a class="btn btn-ghost" href="privacy.html">Privacy</a>
+      <a class="btn btn-ghost" href="disclaimer.html">Disclaimer</a>
+    </nav>
+    <div class="brand">
+      <div class="brand-badge">KK</div>
+      <h1>FAQ</h1>
+    </div>
+  </header>
+
+  <div class="wrap">
+    <section class="panel faq">
+      <div>
+        <div class="q">Is this gambling?</div>
+        <div class="a">No. PixelPup Poker is a free alpha test. No real money; test tokens have no monetary value and are not withdrawable for fiat or other assets.</div>
+      </div>
+      <div>
+        <div class="q">Do I need to be 18+?</div>
+        <div class="a">Yes. You must be 18 or older to participate.</div>
+      </div>
+      <div>
+        <div class="q">What data do you collect?</div>
+        <div class="a">Minimal: session/cookies, captcha responses for anti-bot, basic logs, and an optional payout address. See the <a href="privacy.html">Privacy Policy</a>.</div>
+      </div>
+      <div>
+        <div class="q">How do I report bugs?</div>
+        <div class="a">Ping us on <a href="https://t.me/NexaKennelKlub" target="_blank" rel="noopener">Telegram</a> or <a href="https://x.com/NexaKennelKlub" target="_blank" rel="noopener">X</a>.</div>
+      </div>
+      <div>
+        <div class="q">What’s next?</div>
+        <div class="a">MVP site, profiles, streaks/achievements polish, and optional wallet connect preview. Follow our socials for updates.</div>
+      </div>
+    </section>
+  </div>
+
+  <footer>
+    © 2025 KIBL / PixelPup • Stay shiny 🐶✨ •
+    <a href="tos.html">Terms</a> • <a href="privacy.html">Privacy</a> • <a href="disclaimer.html">Disclaimer</a>
+  </footer>
+
+  <!-- cookie bar (same snippet) -->
+  <div id="cookieBar" class="cookie-bar" role="region" aria-label="Cookie notice" hidden>
+    <span>We use cookies & session storage as described in our <a href="privacy.html">Privacy Policy</a>.</span>
+    <button id="cookieAccept" class="btn">Accept</button>
+  </div>
+  <script>
+    (function(){const KEY='kk_cookie_consent_v1',b=document.getElementById('cookieBar'),x=document.getElementById('cookieAccept');
+      try{if(localStorage.getItem(KEY)==='true')return;b.hidden=false;x.addEventListener('click',()=>{localStorage.setItem(KEY,'true');b.hidden=true;});}
+      catch{b.hidden=false;x.addEventListener('click',()=>b.hidden=true);}
+    })();
+  </script>
+</body>
+</html>
