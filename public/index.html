@@ -199,6 +199,14 @@
   .card button { min-height: 28px; font-size: 10px; }
   .card-hand { min-height: 140px; }
 }
+/* Age gate: focus ring for accessibility */
+#ageGate :focus-visible { outline: 2px solid var(--accent-3); outline-offset: 2px; }
+
+/* Reduce panel text width for readability on narrow screens */
+@media (max-width: 420px){
+  #ageGate .brand h1{ font-size: 1.2rem; }
+}
+
 
 
     h1 { margin: 0 0 10px; }
@@ -270,10 +278,59 @@
 </script>
 
 <body>
-  <div id="ageGate" style="position:fixed; top:0; left:0; width:100%; height:100%; background:#0b0f19; color:#fff; display:flex; flex-direction:column; justify-content:center; align-items:center; z-index:9999;">
-  <h2>PixelPup Poker Alpha</h2>
-  <p>You must be 18 or older to participate in this alpha test.</p>
-  <button onclick="enterSite()" style="padding:10px 20px; margin-top:20px;">I am 18 or older</button>
+ <!-- Themed Age Gate Overlay -->
+<div id="ageGate"
+     role="dialog"
+     aria-labelledby="ageTitle"
+     aria-describedby="ageDesc"
+     aria-modal="true"
+     style="position:fixed; inset:0; z-index:9999; display:none;">
+  <!-- Backdrop -->
+  <div class="age-backdrop" style="position:absolute; inset:0;
+    background:
+      radial-gradient(1200px 800px at 50% -20%, #13203b 0%, #0b0f19 60%, #05070d 100%),
+      linear-gradient(180deg, #0b0f19 0%, #05070d 100%);
+    opacity:.98;"></div>
+
+  <!-- Centered panel -->
+  <div class="age-wrap" style="position:relative; height:100%; display:flex; align-items:center; justify-content:center; padding:24px;">
+    <div class="panel" style="max-width:560px; width:100%; text-align:center;">
+      <div class="brand" style="justify-content:center; margin-bottom:8px;">
+        <div class="brand-badge">KK</div>
+        <h1 id="ageTitle" style="margin:0;">PixelPup Poker Alpha</h1>
+      </div>
+      <p id="ageDesc" class="readout" style="margin:6px 0 16px;">
+        You must be <strong>18 or older</strong> to participate in this alpha test.
+      </p>
+
+      <div class="panel" style="margin: 12px 0;">
+        <p class="readout" style="margin:6px 0;">
+          This is a free alpha test. No real money, no withdrawals. Test tokens have no monetary value.
+        </p>
+        <p class="readout" style="margin:6px 0;">
+          See our <a href="disclaimer.html">Disclaimer</a>, <a href="tos.html">Terms</a>, and <a href="privacy.html">Privacy</a>.
+        </p>
+      </div>
+
+      <div class="controls" style="margin-top:12px;">
+        <button id="ageConfirm" class="btn btn-primary" type="button" aria-label="I am 18 or older">I am 18+</button>
+        <a class="btn btn-ghost" href="https://www.google.com" aria-label="Exit site">Exit</a>
+      </div>
+
+      <label class="readout" style="display:inline-flex; gap:8px; align-items:center; margin-top:10px;">
+        <input id="ageRemember" type="checkbox" style="accent-color: var(--accent);" />
+        Remember this on this device
+      </label>
+    </div>
+  </div>
+
+  <noscript>
+    <div style="position:absolute;bottom:0;left:0;right:0;text-align:center;color:white;padding:8px;background:#111827;">
+  
+    </div>
+  </noscript>
+</div>
+
 </div>
 
     <header>
@@ -874,6 +931,56 @@ async function onClaimPayout() {
     const v = addressInput.value.trim();
     addressInput.style.borderColor = (v && !/^nexa:/.test(v)) ? '#ff5555' : 'rgba(58,245,217,0.35)';
   });
+
+(() => {
+  const LS_KEY = 'ageVerified';
+  const ageGate = document.getElementById('ageGate');
+  const confirmBtn = document.getElementById('ageConfirm');
+  const rememberCb = document.getElementById('ageRemember');
+
+  // Simple focus trap inside the age gate
+  function trapFocus(e){
+    if (!ageGate || ageGate.style.display === 'none') return;
+    const f = ageGate.querySelectorAll('button, a[href], input, [tabindex]:not([tabindex="-1"])');
+    if (!f.length) return;
+    const first = f[0], last = f[f.length - 1];
+    if (e.key === 'Tab'){
+      if (e.shiftKey && document.activeElement === first){ last.focus(); e.preventDefault(); }
+      else if (!e.shiftKey && document.activeElement === last){ first.focus(); e.preventDefault(); }
+    } else if (e.key === 'Escape'){
+      // Esc doesn't bypass the gate; keep focus in dialog
+      first.focus();
+      e.preventDefault();
+    }
+  }
+
+  function showGate(){
+    ageGate.style.display = 'block';
+    document.body.style.overflow = 'hidden';
+    setTimeout(() => confirmBtn?.focus(), 0);
+    document.addEventListener('keydown', trapFocus);
+  }
+  function hideGate(){
+    ageGate.style.display = 'none';
+    document.body.style.overflow = '';
+    document.removeEventListener('keydown', trapFocus);
+  }
+
+  window.addEventListener('load', () => {
+    // Respect previous confirmation
+    const ok = localStorage.getItem(LS_KEY) === 'true' || sessionStorage.getItem(LS_KEY) === 'true';
+    if (!ok) showGate();
+  });
+
+  confirmBtn?.addEventListener('click', () => {
+    const remember = !!rememberCb?.checked;
+    (remember ? localStorage : sessionStorage).setItem(LS_KEY, 'true');
+    hideGate();
+  });
+})();
+</script>
+
+
 </script>
 <footer style="opacity:.9;color:var(--text-dim);font-size:12px;text-align:center;padding:14px 0 6px;">
   © 2025 KIBL / PixelPup • Stay shiny 🐶✨ •
