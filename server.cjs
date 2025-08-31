@@ -1,4 +1,4 @@
-require ('dotenv').config();
+require('dotenv').config();
 const express = require('express');
 const path = require('path');
 const fetch = (...args) => import('node-fetch').then(({ default: fetch }) => fetch(...args));
@@ -7,33 +7,46 @@ const winston = require('winston');
 const { rateLimit } = require('express-rate-limit');
 const hcaptcha = require('hcaptcha');
 const session = require('express-session');
-const { v4: uuidv4 } = require('uuid');          
-const cors = require('cors');              
+const { v4: uuidv4 } = require('uuid');
+const cors = require('cors');
 const cookieParser = require('cookie-parser');
-const { Pool } = require('pg');  
-const PgSession = require('connect-pg-simple')(session);           
-const { randomUUID } = require('crypto'); 
-const app = express();
+const { Pool } = require('pg');
 const csrf = require('csurf');
-app.set('trust proxy', 1); // keep real IP when behind a proxy/load balancer
+const PgSession = require('connect-pg-simple')(session);
+const { randomUUID } = require('crypto');
 
+const app = express();
+app.set('trust proxy', 1);
+
+// ----- ENV / MODE -----
+const isProd = process.env.NODE_ENV === 'production' || !!process.env.RENDER;
 const hasDb = !!process.env.DATABASE_URL;
+
+// ----- DB POOL (accept self-signed cert on Render) -----
 const pool = hasDb
-  ? new Pool({ connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: false } })
+  ? new Pool({
+      connectionString: process.env.DATABASE_URL,
+      ...(isProd ? { ssl: { rejectUnauthorized: false } } : {})
+    })
   : null;
-  app.use(cookieParser());
-  app.use(cors({ origin: true, credentials: true })); // if you really need CORS
+
+// ----- MIDDLEWARE ORDER -----
+app.use(cookieParser());
+
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+// ----- SESSION STORE -----
 const sessionStore = hasDb
   ? new PgSession({
       pool,
       tableName: 'session',
-      createTableIfMissing: true,  // <-- fixes “relation session does not exist”
-      pruneSessionInterval: 60*60 // seconds; clears expired rows hourly
+      createTableIfMissing: true,
+      pruneSessionInterval: 60 * 60 // seconds
     })
   : undefined;
-  const isProd = process.env.NODE_ENV === 'production'; 
+
+// ----- SESSION COOKIE -----
 app.use(session({
   name: 'sid',
   secret: process.env.SESSION_SECRET || 'dev-secret-change-me',
@@ -43,11 +56,11 @@ app.use(session({
   cookie: {
     httpOnly: true,
     sameSite: (process.env.CROSS_SITE_COOKIES === 'true') ? 'none' : 'lax',
-    secure: isProd,              // boolean, not string
-    maxAge: 1000 * 60 * 60 * 24 * 30,
+    secure: isProd, // HTTPS on Render
+    maxAge: 1000 * 60 * 60 * 24 * 30
   }
 }));
-  
+
 const crossSite = process.env.CROSS_SITE_COOKIES === 'true';
 const csrfProtection = csrf({
   cookie: {
