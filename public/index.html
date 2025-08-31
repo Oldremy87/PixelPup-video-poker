@@ -257,7 +257,25 @@
 
     </style>
 </head>
+<script>
+  function enterSite() {
+    localStorage.setItem('ageVerified', 'true');
+    document.getElementById('ageGate').style.display = 'none';
+  }
+  window.addEventListener('load', () => {
+    if (localStorage.getItem('ageVerified') === 'true') {
+      document.getElementById('ageGate').style.display = 'none';
+    }
+  });
+</script>
+
 <body>
+  <div id="ageGate" style="position:fixed; top:0; left:0; width:100%; height:100%; background:#0b0f19; color:#fff; display:flex; flex-direction:column; justify-content:center; align-items:center; z-index:9999;">
+  <h2>PixelPup Poker Alpha</h2>
+  <p>You must be 18 or older to participate in this alpha test.</p>
+  <button onclick="enterSite()" style="padding:10px 20px; margin-top:20px;">I am 18 or older</button>
+</div>
+
     <header>
     <nav>
   <a class="btn btn-telegram" href="https://t.me/NexaKennelKlub" target="_blank" rel="noopener noreferrer">
