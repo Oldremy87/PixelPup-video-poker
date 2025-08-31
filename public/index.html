@@ -291,6 +291,13 @@
       radial-gradient(1200px 800px at 50% -20%, #13203b 0%, #0b0f19 60%, #05070d 100%),
       linear-gradient(180deg, #0b0f19 0%, #05070d 100%);
     opacity:.98;"></div>
+<div id="cookieBar" class="cookie-bar" role="region" aria-label="Cookie notice" hidden>
+  <span>
+    PixelPup Poker uses cookies & session storage to keep you logged in and prevent abuse.
+    By continuing, you agree to our <a href="privacy.html">Privacy Policy</a>.
+  </span>
+  <button id="cookieAccept" class="btn">Accept</button>
+</div>
 
   <!-- Centered panel -->
   <div class="age-wrap" style="position:relative; height:100%; display:flex; align-items:center; justify-content:center; padding:24px;">
@@ -551,7 +558,23 @@ const HCAPTCHA_SITE_KEY = '170a6dc4-35b6-4266-a2ce-6f3eb8c85d9c';
 
 let widgetId = null;
 let pendingResolve = null;
-
+(function () {
+    const KEY = 'kk_cookie_consent_v1';
+    const bar = document.getElementById('cookieBar');
+    const btn = document.getElementById('cookieAccept');
+    try {
+      if (localStorage.getItem(KEY) === 'true') return;
+      bar.hidden = false;
+      btn.addEventListener('click', () => {
+        localStorage.setItem(KEY, 'true');
+        bar.hidden = true;
+      });
+    } catch {
+      // if storage blocked, just show once
+      bar.hidden = false;
+      btn.addEventListener('click', () => bar.hidden = true);
+    }
+  })();
 // Called by the hCaptcha script tag (?onload=onHCaptchaLoad)
 function onHCaptchaLoad() {
   const el = document.getElementById('payoutCaptcha');
