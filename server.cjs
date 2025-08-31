@@ -603,38 +603,51 @@ const payoutLimiter = rateLimit({
 });
 app.use('/api/payout', payoutLimiter);
 
+app.use('/api/payout', payoutLimiter);
+
 app.post('/api/payout', async (req, res) => {
   try {
-    ensureBank(req); // guarantees req.session.bank is a finite number
+    ensureBank(req);
 
-    // --- read authoritative session balance (minor units) ---
+    // authoritative session balance (minor units)
     const payoutMinor = Number(req.session.bank) || 0;
 
-  let captchaResponse;
-  const { playerAddress, 'h-captcha-response': captchaToken } = req.body;
-  logger.info('hCaptcha token received:', { captchaToken });
-  if (!captchaToken) {
-    logger.warn('Missing hCaptcha token');
-    return res.status(400).json({ error: 'Please complete the hCaptcha challenge!' });
-  }
-  for (let attempt = 1; attempt <= 3; attempt++) {
-    try {
-      
-      captchaResponse = await hcaptcha.verify(process.env.HCAPTCHA_SECRET, captchaToken, { host: 'https://hcaptcha.com' });
-      logger.info('hCaptcha verification response (attempt ' + attempt + '):', { success: captchaResponse.success, errorCodes: captchaResponse['error-codes'] });
-      break;
-    } catch (error) {
-      logger.error('hCaptcha verification error (attempt ' + attempt + '):', { error });
-      if (attempt === 3) throw error;
-      await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
-    }
-  }
-  if (!captchaResponse.success) {
-    logger.warn('hCaptcha verification failed after retries', { errorCodes: captchaResponse['error-codes'] });
-    return res.status(400).json({ error: 'hCaptcha verification failed! Error: ' + (captchaResponse['error-codes'] || 'Unknown') });
-  }
+    // accept BOTH common field names from clients
+    const {
+      playerAddress,
+      'h-captcha-response': hcapFromStd,
+      hcaptchaToken: hcapFromCustom
+    } = req.body || {};
 
-    // basic checks
+    const captchaToken = hcapFromCustom || hcapFromStd;
+    if (!captchaToken) {
+      logger.warn('Missing hCaptcha token');
+      return res.status(400).json({ error: 'Please complete the hCaptcha challenge!' });
+    }
+
+    // verify using correct signature (remote IP as 3rd arg)
+    let captchaResponse;
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        captchaResponse = await hcaptcha.verify(process.env.HCAPTCHA_SECRET, captchaToken, req.ip);
+        logger.info(`hCaptcha verify attempt ${attempt}:`, {
+          success: captchaResponse.success,
+          errorCodes: captchaResponse['error-codes']
+        });
+        break;
+      } catch (err) {
+        logger.error(`hCaptcha verify error attempt ${attempt}`, { err: String(err) });
+        if (attempt === 3) throw err;
+        await new Promise(r => setTimeout(r, 1000 * attempt));
+      }
+    }
+    if (!captchaResponse?.success) {
+      return res.status(400).json({
+        error: 'hCaptcha verification failed',
+        detail: captchaResponse?.['error-codes'] || null
+      });
+    }
+
     if (!payoutMinor || payoutMinor <= 0) {
       return res.status(400).json({ error: 'No balance to withdraw' });
     }
@@ -649,7 +662,10 @@ app.post('/api/payout', async (req, res) => {
       const wait = PAYOUT_COOLDOWN_MS - (Date.now() - lastAt);
       return res.status(429).json({ error: 'address_cooldown', retryInMs: wait });
     }
-    usedCaptchaTokens.add(captchaToken);
+
+    // decide send amount (minor units)
+    const sendMinor = Math.min(payoutMinor, MAX_PAYOUT);
+    const sendWholeKibl = Math.floor(sendMinor / 100);
 
     // --- RPC send ---
     const rpcUrl = process.env.RPC_URL || `http://localhost:${process.env.RPC_PORT || 7227}`;
@@ -663,7 +679,7 @@ app.post('/api/payout', async (req, res) => {
       jsonrpc: '1.0',
       id: 'kibl',
       method: 'token',
-      params: ['send', process.env.KIBL_GROUP_ID, playerAddress, String(payoutMinor)]
+      params: ['send', process.env.KIBL_GROUP_ID, playerAddress, String(sendMinor)]
     });
 
     let txId = null;
@@ -688,8 +704,8 @@ app.post('/api/payout', async (req, res) => {
       }
     }
 
-    // --- success: zero the bank, set cooldown, persist session ---
-    req.session.bank = 0;
+    // success: reduce by what we sent (don’t always zero)
+    req.session.bank = Math.max(0, payoutMinor - sendMinor);
     lastPayoutByAddress.set(playerAddress, Date.now());
 
     await new Promise((resolve, reject) => {
@@ -708,28 +724,19 @@ app.post('/api/payout', async (req, res) => {
       amountWhole: sendWholeKibl
     });
 
-    // show user what actually went on-chain (whole KIBL)
     return res.json({
       success: true,
       txId,
+      sentKIBL: sendWholeKibl,
+      remainingKIBL: Math.floor(req.session.bank / 100),
       message: `Sent ${sendWholeKibl} KIBL to ${playerAddress}`
     });
+
   } catch (error) {
     logger.error('Token send failed', { error: String(error) });
     return res.status(500).json({ error: 'Failed to send tokens due to a server issue. Please try again later.' });
   }
-});
-app.post('/api/debug-hcaptcha', express.json(), async (req, res) => {
-  const { hcaptchaToken } = req.body || {};
-  if (!hcaptchaToken) return res.status(400).json({ ok:false, message:'no token' });
-
-  try {
-    const r = await require('hcaptcha').verify(process.env.HCAPTCHA_SECRET, hcaptchaToken, req.ip);
-    return res.json({ ok: r.success, verify: r });
-  } catch (e) {
-    return res.status(500).json({ ok:false, error: String(e) });
-  }
-});
+}); // <-- closes app.post
 
 // =================== Root ===================
 app.get('/', (_req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
