@@ -8,6 +8,9 @@
   <style>
     /* ===== Retro PixelPup theme (CSP-safe, no external fonts) ===== */
     :root{
+       --hand-gap: 10px;
+        --card-ratio: 1.6;   /* height = width * ratio; tweak if your art needs */
+      --cardW: 100px;    
       --bg: #0b0f19;
       --panel: #111827;
       --text: #00ffc6;
@@ -86,8 +89,22 @@
 
     /* Layout panels */
     .wrap { max-width: 1100px; margin: 0 auto; }
-    .hud { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; margin-bottom: 16px; }
+  
+
+
+/* Feature the table */
+.panel-table { grid-column: 1; }
+.panel-claim { grid-column: 2; }
+
+/* Stack on tablets/phones */
+@media (max-width: 1024px) {
+  .hud { grid-template-columns: 1fr; }
+  .panel-table, .panel-claim { grid-column: 1; }
+}
     .panel {
+      display: grid;
+      grid-template-columns: 2fr 1fr;
+       gap: 12px;
       background: linear-gradient(180deg, rgba(255,255,255,0.04), rgba(255,255,255,0.01));
       border: 1px solid rgba(58,245,217,0.3);
       border-radius: 16px; padding: 16px;
@@ -100,6 +117,8 @@
 
     /* Hand area (real cards + simulated placeholders share this) */
     .card-hand {
+      .card { cursor: pointer; user-select: none; }
+       gap: var(--hand-gap);
       display: flex;
       flex-wrap: nowrap;
       justify-content: center;
@@ -116,8 +135,8 @@
     /* Card visual */
     /* Card + placeholder sizing and layout */
 .card, .placeholder {
-  width: 100px;
-  height: 172px;                 /* a little taller so label + button always fit */
+  width: var(--cardW);
+  height: calc(var(--cardW) * var(--card-ratio));          
   border-radius: 10px;
   background: var(--card-bg);
   color: #fff;
@@ -146,12 +165,16 @@
   white-space: nowrap;           /* never break “Dealing...” into “...ling” */
   padding: 0 6px;
 }
-
+.controls { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
+.controls .btn { flex: 1 1 180px; }
+@media (max-width: 420px) {
+  .controls .btn { flex: 1 1 48%; } /* two per row if needed */
 .card img {
   width: 100%;
   height: 100%;
   object-fit: contain;           /* scale art without overflow */
   display: block;
+}
 }
 
 /* 2-line clamp for long names like “Queen of Diamonds” */
@@ -169,6 +192,7 @@
 }
 
 .card button {
+  display: none;
   width: 100%;
   min-height: 30px;              /* reliable tap target */
   font-size: 11px;
@@ -266,6 +290,27 @@
     </style>
 </head>
 <script>
+  function fitHandToWidth() {
+    const hand = document.getElementById('hand');
+    if (!hand) return;
+
+    // How wide is the hand area?
+    const styles = getComputedStyle(hand);
+    const gap = parseFloat(styles.gap || styles.columnGap || 10) || 10;
+    const cards = 5, gaps = cards - 1;
+
+    const available = hand.clientWidth; // visible width
+    // space for 5 cards + 4 gaps
+    const perCard = (available - gap * gaps) / cards;
+
+    // clamp so it looks good everywhere
+    const cardW = Math.max(58, Math.min(perCard, 130));
+
+    document.documentElement.style.setProperty('--cardW', cardW + 'px');
+  }
+
+  addEventListener('load', fitHandToWidth);
+  addEventListener('resize', fitHandToWidth);
   function enterSite() {
     localStorage.setItem('ageVerified', 'true');
     document.getElementById('ageGate').style.display = 'none';
@@ -312,7 +357,7 @@
 
       <div class="panel" style="margin: 12px 0;">
         <p class="readout" style="margin:6px 0;">
-          This is a free alpha test. No real money, no withdrawals. Test tokens have no monetary value.
+          This is a free alpha test. No real money.  Tokens have no monetary value.
         </p>
         <p class="readout" style="margin:6px 0;">
           See our <a href="disclaimer.html">Disclaimer</a>, <a href="tos.html">Terms</a>, and <a href="privacy.html">Privacy</a>.
@@ -383,7 +428,7 @@
       <button id="draw" class="btn" disabled>Draw</button>
     </div>
     <div id="hand" class="card-hand" aria-live="polite"></div>
-    <p class="readout">Tap a card (or its Hold button) to keep it for the draw.</p>
+    <p class="readout">Tap a card to keep it for the draw.</p>
   </div>
 
   <!-- RIGHT SIDEBAR: TOTAL + CLAIM + DAILY -->
