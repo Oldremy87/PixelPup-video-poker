@@ -638,14 +638,12 @@ app.post('/api/payout', async (req, res) => {
   try {
     ensureBank(req);
 
-    // authoritative session balance (minor units)
     const payoutMinor = Number(req.session.bank) || 0;
 
-    // accept BOTH common field names from clients
     const {
       playerAddress,
       'h-captcha-response': hcapFromStd,
-      hcaptchaToken: hcapFromCustom
+      hcaptchaToken: hcapFromCustom,
     } = req.body || {};
 
     const captchaToken = hcapFromCustom || hcapFromStd;
@@ -654,15 +652,14 @@ app.post('/api/payout', async (req, res) => {
       return res.status(400).json({ error: 'Please complete the hCaptcha challenge!' });
     }
 
-    // verify using correct signature (remote IP as 3rd arg)
+    // hCaptcha verify (with retries)
     let captchaResponse;
     for (let attempt = 1; attempt <= 3; attempt++) {
       try {
         captchaResponse = await hcaptcha.verify(process.env.HCAPTCHA_SECRET, captchaToken, req.ip);
-        logger.info(`hCaptcha verify attempt ${attempt}:`, {
+        logger.info(`hCaptcha verify attempt ${attempt}`, {
           success: captchaResponse.success,
-          errorCodes: captchaResponse['error-codes']
-          
+          errorCodes: captchaResponse['error-codes'],
         });
         break;
       } catch (err) {
@@ -674,7 +671,7 @@ app.post('/api/payout', async (req, res) => {
     if (!captchaResponse?.success) {
       return res.status(400).json({
         error: 'hCaptcha verification failed',
-        detail: captchaResponse?.['error-codes'] || null
+        detail: captchaResponse?.['error-codes'] || null,
       });
     }
 
@@ -693,11 +690,11 @@ app.post('/api/payout', async (req, res) => {
       return res.status(429).json({ error: 'address_cooldown', retryInMs: wait });
     }
 
-    // decide send amount (minor units)
+    // compute send amount
     const sendMinor = Math.min(payoutMinor, MAX_PAYOUT);
     const sendWholeKibl = Math.floor(sendMinor / 100);
 
-    // --- RPC send ---
+    // RPC config
     const rpcUrl = process.env.RPC_URL || `http://localhost:${process.env.RPC_PORT || 7227}`;
     if (!process.env.RPC_USER || !process.env.RPC_PASSWORD || !process.env.KIBL_GROUP_ID) {
       logger.error('RPC or token env not configured');
@@ -705,76 +702,98 @@ app.post('/api/payout', async (req, res) => {
     }
     const auth = Buffer.from(`${process.env.RPC_USER}:${process.env.RPC_PASSWORD}`).toString('base64');
 
-    const body = JSON.stringify({
+    const rpcBody = JSON.stringify({
       jsonrpc: '1.0',
       id: 'kibl',
       method: 'token',
-      params: ['send', process.env.KIBL_GROUP_ID, playerAddress, String(sendMinor)]
+      params: ['send', process.env.KIBL_GROUP_ID, playerAddress, String(sendMinor)],
     });
 
-     for (let attempt = 1; attempt <= 3; attempt++) {
+    // --- RPC send with retry ---
+    let txId = null;
+    for (let attempt = 1; attempt <= 3; attempt++) {
       try {
         const response = await fetch(rpcUrl, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Authorization': `Basic ${auth}` },
-          body
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Basic ${auth}`,
+          },
+          body: rpcBody,
         });
         logger.info('Fetch response status:', { status: response.status });
+
         let data;
-         try { data = await response.json(); }
-         catch { throw new Error(`RPC ${response.status} ${await response.text()}`); }
-        req.session.bank = Math.max(0, payoutMinor - sendMinor);
-    lastPayoutByAddress.set(playerAddress, Date.now());
+        try {
+          data = await response.json();
+        } catch {
+          throw new Error(`RPC ${response.status} ${await response.text()}`);
+        }
 
-    await new Promise((resolve, reject) => {
-      if (typeof req.session.save === 'function') {
-        req.session.save(err => (err ? reject(err) : resolve()));
-      } else {
-        resolve();
-      }
-    });
-    await db.query(
-  `INSERT INTO payouts(address, amount_kibl, tx_id, session_id, ip, status)
-   VALUES ($1,$2,$3,$4,$5,'success')`,
-  [playerAddress, sendWholeKibl, data.txId, req.sessionID, req.ip]
-     );
-
-        const txId = data.result;
-        const successResponse = {
-          success: true,
-          txId: txId,
-          sentKIBL: sendWholeKibl,
-          remainingKIBL: Math.floor(req.session.bank / 100),
-          message: `Sent ${sendWholeKibl} KIBL to ${playerAddress}`
-
-        };
-        logger.info('Payout success', {
-      ip: req.ip,
-      txId,
-      playerAddress,
-      amountMinor: sendMinor,
-      amountWhole: sendWholeKibl
-    });
-    try {
-  await getOrCreateUser(req.uid); // ensure rows exist
-  const p = await db();
-  await p.query(
-    'UPDATE user_stats SET bank_minor = GREATEST(bank_minor - $2, 0), last_seen_at = now() WHERE user_id = $1',
-    [req.uid, sendMinor]
-  );
-} catch (e) {
-  logger.error('db bank decrement failed after payout', { e: String(e) });
-}
-        return res.json(successResponse);
+        if (data.error) throw new Error(`RPC error: ${JSON.stringify(data.error)}`);
+        txId = data.result;   // <— correct field from JSON-RPC
+        break;                // success
       } catch (err) {
         logger.error(`RPC attempt ${attempt} failed`, { err: String(err) });
         if (attempt === 3) throw err;
         await new Promise(r => setTimeout(r, 1000 * attempt));
       }
-     }
+    }
+
+    // --- POST-SEND BOOKKEEPING ---
+    // 1) session bank decrease
+    req.session.bank = Math.max(0, payoutMinor - sendMinor);
+
+    // 2) set cooldown
+    lastPayoutByAddress.set(playerAddress, Date.now());
+
+    // 3) persist session if the store needs it
+    await new Promise((resolve, reject) => {
+      if (typeof req.session.save === 'function') {
+        req.session.save(err => (err ? reject(err) : resolve()));
+      } else resolve();
+    });
+
+    // 4) DB writes (use one style)
+    await db.query(
+      `INSERT INTO payouts(address, amount_kibl, tx_id, session_id, ip, status)
+       VALUES ($1,$2,$3,$4,$5,'success')`,
+      [playerAddress, sendWholeKibl, txId, req.sessionID, req.ip]
+    );
+
+    try {
+      await getOrCreateUser(req.uid);
+      await db.query(
+        'UPDATE user_stats SET bank_minor = GREATEST(bank_minor - $2, 0), last_seen_at = now() WHERE user_id = $1',
+        [req.uid, sendMinor]
+      );
+    } catch (e) {
+      logger.error('db bank decrement failed after payout', { e: String(e) });
+    }
+
+    logger.info('Payout success', {
+      ip: req.ip,
+      txId,
+      playerAddress,
+      amountMinor: sendMinor,
+      amountWhole: sendWholeKibl,
+    });
+
+    // 5) Respond to client
+    return res.json({
+      success: true,
+      txId,
+      sentKIBL: sendWholeKibl,
+      remainingKIBL: Math.floor((Number(req.session.bank) || 0) / 100),
+      message: `Sent ${sendWholeKibl} KIBL to ${playerAddress}`,
+    });
+
+  } catch (error) {
+    logger.error('Token send failed', { error: String(error) });
+    return res.status(500).json({ error: 'Failed to send tokens due to a server issue. Please try again later.' });
   }
-  catch {}
-}); 
+});
+
 
 // =================== Root ===================
 app.get('/', (_req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
