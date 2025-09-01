@@ -731,6 +731,11 @@ app.post('/api/payout', async (req, res) => {
         resolve();
       }
     });
+    await db.query(
+  `INSERT INTO payouts(address, amount_kibl, tx_id, session_id, ip, status)
+   VALUES ($1,$2,$3,$4,$5,'success')`,
+  [playerAddress, sendWholeKibl, data.txId, req.sessionID, req.ip]
+);
 
     logger.info('Payout success', {
       ip: req.ip,
