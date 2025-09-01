@@ -319,9 +319,42 @@
     }
   });
 </script>
+<div id="cookieBar" class="cookie-bar" role="region" aria-label="Cookie notice" hidden>
+  <span>
+    PixelPup Poker uses cookies & session storage to keep you logged in and prevent abuse.
+    By continuing, you agree to our <a href="privacy.html">Privacy Policy</a>.
+  </span>
+  <button id="cookieAccept" class="btn">Accept</button>
+</div>
+<script>
+(function () {
+  const KEY = 'kk_cookie_consent_v1';
+  function initCookieBar(){
+    const bar = document.getElementById('cookieBar');
+    const btn = document.getElementById('cookieAccept');
+    if (!bar || !btn) return;
+    try {
+      if (localStorage.getItem(KEY) === 'true') return;
+      bar.hidden = false;
+      btn.addEventListener('click', () => {
+        localStorage.setItem(KEY, 'true');
+        bar.hidden = true;
+      });
+    } catch {
+      bar.hidden = false;
+      btn.addEventListener('click', () => bar.hidden = true);
+    }
+  }
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initCookieBar);
+  } else {
+    initCookieBar();
+  }
+})();
+</script>
 
 <body>
- <!-- Themed Age Gate Overlay -->
+<!-- Themed Age Gate Overlay -->
 <div id="ageGate"
      role="dialog"
      aria-labelledby="ageTitle"
@@ -334,29 +367,22 @@
       radial-gradient(1200px 800px at 50% -20%, #13203b 0%, #0b0f19 60%, #05070d 100%),
       linear-gradient(180deg, #0b0f19 0%, #05070d 100%);
     opacity:.98;"></div>
-  <div id="cookieBar" class="cookie-bar" role="region" aria-label="Cookie notice" hidden></div>
- <span>
-    PixelPup Poker uses cookies & session storage to keep you logged in and prevent abuse.
-    By continuing, you agree to our <a href="privacy.html">Privacy Policy</a>.
-  </span>
-  <button id="cookieAccept" class="btn">Accept</button>
- 
-</div>
 
-  <!-- Centered panel -->
+  <!-- Centered panel (NOTE: inside #ageGate) -->
   <div class="age-wrap" style="position:relative; height:100%; display:flex; align-items:center; justify-content:center; padding:24px;">
     <div class="panel" style="max-width:560px; width:100%; text-align:center;">
       <div class="brand" style="justify-content:center; margin-bottom:8px;">
         <div class="brand-badge">KK</div>
         <h1 id="ageTitle" style="margin:0;">PixelPup Poker Alpha</h1>
       </div>
+
       <p id="ageDesc" class="readout" style="margin:6px 0 16px;">
         You must be <strong>18 or older</strong> to participate in this alpha test.
       </p>
 
       <div class="panel" style="margin: 12px 0;">
         <p class="readout" style="margin:6px 0;">
-          This is a free alpha test. No real money.  Tokens have no monetary value.
+          This is a free alpha test. No real money. Tokens have no monetary value.
         </p>
         <p class="readout" style="margin:6px 0;">
           See our <a href="disclaimer.html">Disclaimer</a>, <a href="tos.html">Terms</a>, and <a href="privacy.html">Privacy</a>.
@@ -374,6 +400,14 @@
       </label>
     </div>
   </div>
+
+  <noscript>
+    <div style="position:absolute;bottom:0;left:0;right:0;text-align:center;color:white;padding:8px;background:#111827;">
+      JavaScript is required to enter.
+    </div>
+  </noscript>
+</div>
+
 
   <noscript>
     <div style="position:absolute;bottom:0;left:0;right:0;text-align:center;color:white;padding:8px;background:#111827;">
@@ -867,32 +901,6 @@ async function draw() {
   }
 }
 
-  function calculatePayout(hand) {
-    let payout = 0;
-    const rankValues = { '2':2,'3':3,'4':4,'5':5,'6':6,'7':7,'8':8,'9':9,'10':10,'Jack':11,'Queen':12,'King':13,'Ace':14 };
-    const sorted = hand.slice().sort((a,b) => rankValues[a.rank]-rankValues[b.rank]);
-    const isFlush = hand.every(c => c.suit === hand[0].suit);
-    let isStraight = sorted.every((c,i) => i===0 || rankValues[c.rank] === rankValues[sorted[i-1].rank] + 1);
-    if (!isStraight && sorted.map(c=>rankValues[c.rank]).join(',') === '2,3,4,5,14') isStraight = true; // wheel
-    const isRoyalFlush = isFlush && isStraight && sorted[4].rank === 'Ace' && sorted[0].rank === '10';
-
-    const rankCounts = {};
-    hand.forEach(c => rankCounts[c.rank] = (rankCounts[c.rank]||0)+1);
-    const counts = Object.values(rankCounts).sort((a,b)=>b-a);
-
-    if (isRoyalFlush) payout = 250;
-    else if (isStraight && isFlush) payout = 50;
-    else if (counts[0] === 4) payout = 25;
-    else if (counts[0] === 3 && counts[1] === 2) payout = 9;
-    else if (isFlush) payout = 6;
-    else if (isStraight) payout = 4;
-    else if (counts[0] === 3) payout = 3;
-    else if (counts[0] === 2 && counts[1] === 2) payout = 2;
-    else if (counts[0] === 2 && Object.keys(rankCounts).some(r => rankCounts[r] === 2 && ['Jack','Queen','King','Ace'].includes(r))) payout = 1;
-
-    return { payout, isRoyalFlush, isWin: payout > 0 };
-  }
-
 async function onDailyReward() {
   try {
     const res = await postWithCsrf(API.daily, { method: 'POST',
@@ -1046,15 +1054,9 @@ async function onClaimPayout() {
   });
 })();
 </script>
-
-
-</script>
 <footer style="opacity:.9;color:var(--text-dim);font-size:12px;text-align:center;padding:14px 0 6px;">
   © 2025 KIBL / PixelPup • Stay shiny 🐶✨ •
   <a href="tos.html">Terms</a> • <a href="privacy.html">Privacy</a> • <a href="disclaimer.html">Disclaimer</a>
 </footer>
-
 </body>
-
-
 </html>
