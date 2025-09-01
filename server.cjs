@@ -729,7 +729,6 @@ app.post('/api/payout', async (req, res) => {
         } catch {
           throw new Error(`RPC ${response.status} ${await response.text()}`);
         }
-
         if (data.error) throw new Error(`RPC error: ${JSON.stringify(data.error)}`);
         txId = data.result;   // <— correct field from JSON-RPC
         break;                // success
@@ -754,12 +753,15 @@ app.post('/api/payout', async (req, res) => {
       } else resolve();
     });
 
-    // 4) DB writes (use one style)
-    await db.query(
-      `INSERT INTO payouts(address, amount_kibl, tx_id, session_id, ip, status)
-       VALUES ($1,$2,$3,$4,$5,'success')`,
-      [playerAddress, sendWholeKibl, txId, req.sessionID, req.ip]
-    );
+      try {
+          await db.query(
+            `INSERT INTO payouts(address, amount_kibl, tx_id, session_id, ip, status)
+             VALUES ($1,$2,$3,$4,$5,'success')`,
+            [playerAddress, sendWholeKibl, txId, req.sessionID, req.ip]  // <-- use txId
+          );
+        } catch (e) {
+          logger.error('payouts insert failed', { e: String(e), txId, playerAddress });          // optional: don’t throw here during alpha; coins already sent
+      }
 
     try {
       await getOrCreateUser(req.uid);
@@ -778,15 +780,14 @@ app.post('/api/payout', async (req, res) => {
       amountMinor: sendMinor,
       amountWhole: sendWholeKibl,
     });
-
-    // 5) Respond to client
-    return res.json({
-      success: true,
-      txId,
-      sentKIBL: sendWholeKibl,
-      remainingKIBL: Math.floor((Number(req.session.bank) || 0) / 100),
-      message: `Sent ${sendWholeKibl} KIBL to ${playerAddress}`,
-    });
+      const successResponse = {
+           success: true,
+           txId: txId,
+           sentKIBL: sendWholeKibl,
+           remainingKIBL: Math.floor(req.session.bank / 100),
+           message: `Sent ${sendWholeKibl} KIBL to ${playerAddress}`
+         };
+         return res.json(successResponse);
 
   } catch (error) {
     logger.error('Token send failed', { error: String(error) });
