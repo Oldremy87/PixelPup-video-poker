@@ -787,7 +787,7 @@ app.post('/api/payout', async (req, res) => {
            remainingKIBL: Math.floor(req.session.bank / 100),
            message: `Sent ${sendWholeKibl} KIBL to ${playerAddress}`
          };
-         return res.json(successResponse);
+         return res.json(successResponse); 
 
   } catch (error) {
     logger.error('Token send failed', { error: String(error) });
