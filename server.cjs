@@ -119,19 +119,33 @@ function getClientIp(req){
 }
 
 // =================== Security headers ===================
-app.use(helmet({
-  contentSecurityPolicy: {
+app.use(helmet()); // sets a bunch of safe defaults (noSniff, hsts, hidePoweredBy, etc.)
+
+// Match your explicit policies:
+app.use(helmet.referrerPolicy({ policy: 'no-referrer' }));
+
+// X-Frame-Options for old browsers (CSP frame-ancestors is the modern control)
+app.use(helmet.frameguard({ action: 'deny' })); // deny being embedded anywhere
+
+// Content Security Policy (keeps your inline scripts + hCaptcha working)
+app.use(
+  helmet.contentSecurityPolicy({
+    useDefaults: false, // we’ll be explicit
     directives: {
       defaultSrc: ["'self'"],
-      scriptSrc: ["'self'","'unsafe-inline'" , "https://hcaptcha.com", "https://*.hcaptcha.com"],
-      scriptSrcAttr: ["'self'", "'unsafe-inline'"],
-      connectSrc: ["'self'", "https://hcaptcha.com", "https://*.hcaptcha.com"],
-      styleSrc: ["'self'", "'unsafe-inline'", "https://hcaptcha.com", "https://*.hcaptcha.com"],
-      frameSrc: ["'self'", "https://hcaptcha.com", "https://*.hcaptcha.com"],
-      imgSrc: ["'self'", "data:"]
-    }
-  }
-}));
+      scriptSrc: ["'self'", "'unsafe-inline'", "https://hcaptcha.com", "https://*.hcaptcha.com"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      imgSrc: ["'self'", "data:", "blob:"],
+      connectSrc: ["'self'"],
+      frameSrc: ["https://hcaptcha.com", "https://*.hcaptcha.com"],
+      objectSrc: ["'none'"],
+      baseUri: ["'self'"],
+      formAction: ["'self'"],
+      frameAncestors: ["'none'"], // don’t allow others to iframe your site
+     upgradeInsecureRequests: []  
+    },
+  })
+);
 // =================== Logging ===================
 const logger = winston.createLogger({
   level: 'info',
