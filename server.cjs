@@ -155,7 +155,7 @@ const logger = winston.createLogger({
     new winston.transports.File({ filename: 'faucet.log' })
   ]
 });
-
+app.get('/healthz', (req,res)=>res.json({ ok:true, ts:new Date().toISOString() }));
 app.use((req, _res, next) => {
   logger.info('Incoming request', { method: req.method, url: req.url, ip: req.ip, ua: req.headers['user-agent'] || '' });
   next();
@@ -614,26 +614,6 @@ app.post('/api/daily-reward', rewardLimiter, async (req, res) => {
 
 
 // =================== Payout (minor units throughout) ===================
-const usedCaptchaTokens   = new Set();                  // replay defense
-setInterval(() => usedCaptchaTokens.clear(), 5 * 60 * 1000);
-
-const lastPayoutByAddress = new Map();                  // per-address cooldown
-
-function looksLikeNexaAddress(addr = '') {
-  if (typeof addr !== 'string') return false;
-  if (!addr.startsWith('nexa:')) return false;
-  if (addr.length > 120) return false;
-  return /^[a-z0-9:]+$/i.test(addr);
-}
-
-const payoutLimiter = rateLimit({
-  windowMs: SIX_HOURS_MS,
-  max: 5,
-  standardHeaders: true,
-  legacyHeaders: false
-});
-app.use('/api/payout', payoutLimiter);
-
 app.post('/api/payout', async (req, res) => {
   try {
     ensureBank(req);
@@ -654,6 +634,11 @@ app.post('/api/payout', async (req, res) => {
       return res.status(400).json({ error: 'Please complete the hCaptcha challenge!' });
     }
 
+    // replay defense (token reuse)
+    if (usedCaptchaTokens.has(captchaToken)) {
+      return res.status(400).json({ error: 'captcha_replay' });
+    }
+
     // verify using correct signature (remote IP as 3rd arg)
     let captchaResponse;
     for (let attempt = 1; attempt <= 3; attempt++) {
@@ -662,7 +647,6 @@ app.post('/api/payout', async (req, res) => {
         logger.info(`hCaptcha verify attempt ${attempt}:`, {
           success: captchaResponse.success,
           errorCodes: captchaResponse['error-codes']
-          
         });
         break;
       } catch (err) {
@@ -677,6 +661,8 @@ app.post('/api/payout', async (req, res) => {
         detail: captchaResponse?.['error-codes'] || null
       });
     }
+    // mark token as used for the replay window
+    usedCaptchaTokens.add(captchaToken);
 
     if (!payoutMinor || payoutMinor <= 0) {
       return res.status(400).json({ error: 'No balance to withdraw' });
@@ -705,33 +691,33 @@ app.post('/api/payout', async (req, res) => {
     }
     const auth = Buffer.from(`${process.env.RPC_USER}:${process.env.RPC_PASSWORD}`).toString('base64');
 
-    const body = JSON.stringify({
+    const rpcBody = JSON.stringify({
       jsonrpc: '1.0',
       id: 'kibl',
       method: 'token',
       params: ['send', process.env.KIBL_GROUP_ID, playerAddress, String(sendMinor)]
     });
 
-     for (let attempt = 1; attempt <= 3; attempt++) {
+    let txId = null; // <-- capture for use after loop
+
+    for (let attempt = 1; attempt <= 3; attempt++) {
       try {
         const response = await fetch(rpcUrl, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'Authorization': `Basic ${auth}` },
-          body
+          body: rpcBody
         });
         logger.info('Fetch response status:', { status: response.status });
-        let data;
-         try { data = await response.json(); }
-         catch { throw new Error(`RPC ${response.status} ${await response.text()}`); }
 
-        const txId = data.result;
-        const successResponse = {
-          success: true,
-          txId: txId,
-          message: `Sent ${sendWholeKibl} KIBL to ${playerAddress}`
-        };
-        logger.info('Success response:', { response: successResponse });
-        return res.json(successResponse);
+        let data;
+        try { data = await response.json(); }
+        catch { throw new Error(`RPC ${response.status} ${await response.text()}`); }
+
+        if (data.error) {
+          throw new Error(`RPC error: ${JSON.stringify(data.error)}`);
+        }
+        txId = data.result;
+        break; // success – exit retry loop
       } catch (err) {
         logger.error(`RPC attempt ${attempt} failed`, { err: String(err) });
         if (attempt === 3) throw err;
@@ -739,22 +725,35 @@ app.post('/api/payout', async (req, res) => {
       }
     }
 
-    // success: reduce by what we sent (don’t always zero)
+    // --- POST-SUCCESS BOOKKEEPING ---
+    // 1) reduce session bank
     req.session.bank = Math.max(0, payoutMinor - sendMinor);
+    // 2) set per-address cooldown
     lastPayoutByAddress.set(playerAddress, Date.now());
-
+    // 3) persist session if needed
     await new Promise((resolve, reject) => {
       if (typeof req.session.save === 'function') {
         req.session.save(err => (err ? reject(err) : resolve()));
-      } else {
-        resolve();
-      }
+      } else resolve();
     });
+
+    // 4) DB writes (use a single style; adjust to your db wrapper)
+    // If `db` is a Pool:
     await db.query(
-  `INSERT INTO payouts(address, amount_kibl, tx_id, session_id, ip, status)
-   VALUES ($1,$2,$3,$4,$5,'success')`,
-  [playerAddress, sendWholeKibl, data.txId, req.sessionID, req.ip]
-);
+      `INSERT INTO payouts(address, amount_kibl, tx_id, session_id, ip, status)
+       VALUES ($1,$2,$3,$4,$5,'success')`,
+      [playerAddress, sendWholeKibl, txId, req.sessionID, req.ip]
+    );
+
+    try {
+      await getOrCreateUser(req.uid); // ensure rows exist
+      await db.query(
+        'UPDATE user_stats SET bank_minor = GREATEST(bank_minor - $2, 0), last_seen_at = now() WHERE user_id = $1',
+        [req.uid, sendMinor]
+      );
+    } catch (e) {
+      logger.error('db bank decrement failed after payout', { e: String(e) });
+    }
 
     logger.info('Payout success', {
       ip: req.ip,
@@ -763,22 +762,13 @@ app.post('/api/payout', async (req, res) => {
       amountMinor: sendMinor,
       amountWhole: sendWholeKibl
     });
-    try {
-  await getOrCreateUser(req.uid); // ensure rows exist
-  const p = await db();
-  await p.query(
-    'UPDATE user_stats SET bank_minor = GREATEST(bank_minor - $2, 0), last_seen_at = now() WHERE user_id = $1',
-    [req.uid, sendMinor]
-  );
-} catch (e) {
-  logger.error('db bank decrement failed after payout', { e: String(e) });
-}
 
+    // 5) Final JSON for play.html
     return res.json({
       success: true,
       txId,
       sentKIBL: sendWholeKibl,
-      remainingKIBL: Math.floor(req.session.bank / 100),
+      remainingKIBL: Math.floor((Number(req.session.bank) || 0) / 100),
       message: `Sent ${sendWholeKibl} KIBL to ${playerAddress}`
     });
 
@@ -786,7 +776,7 @@ app.post('/api/payout', async (req, res) => {
     logger.error('Token send failed', { error: String(error) });
     return res.status(500).json({ error: 'Failed to send tokens due to a server issue. Please try again later.' });
   }
-}); // <-- closes app.post
+});
 
 // =================== Root ===================
 app.get('/', (_req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
