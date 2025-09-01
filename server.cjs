@@ -698,21 +698,26 @@ app.post('/api/payout', async (req, res) => {
       params: ['send', process.env.KIBL_GROUP_ID, playerAddress, String(sendMinor)]
     });
 
-    let txId = null;
-    for (let attempt = 1; attempt <= 3; attempt++) {
+     for (let attempt = 1; attempt <= 3; attempt++) {
       try {
         const response = await fetch(rpcUrl, {
           method: 'POST',
-          headers: {
-            'Content-Type': 'text/plain',
-            'Authorization': `Basic ${auth}`
-          },
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Basic ${auth}` },
           body
         });
-        const data = await response.json();
-        if (data.error) throw new Error(data.error.message || 'Unknown RPC error');
-        txId = data.result;
-        break;
+        logger.info('Fetch response status:', { status: response.status });
+        let data;
+         try { data = await response.json(); }
+         catch { throw new Error(`RPC ${response.status} ${await response.text()}`); }
+
+        const txId = data.result;
+        const successResponse = {
+          success: true,
+          txId: txId,
+          message: `Sent ${sendWholeKibl} KIBL to ${playerAddress}`
+        };
+        logger.info('Success response:', { response: successResponse });
+        return res.json(successResponse);
       } catch (err) {
         logger.error(`RPC attempt ${attempt} failed`, { err: String(err) });
         if (attempt === 3) throw err;
