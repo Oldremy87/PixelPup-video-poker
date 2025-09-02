@@ -352,7 +352,14 @@
   }
 })();
 </script>
-
+<nav class="kk-nav">
+  <a href="/" class="kk-home" aria-label="Go to Home">🏠 Home</a>
+</nav>
+<style>
+  .kk-nav{position:sticky;top:0;display:flex;gap:.5rem;align-items:center;padding:.5rem .75rem;background:#111;color:#fff;border-bottom:1px solid #333;z-index:1000;}
+  .kk-nav a{display:inline-flex;align-items:center;gap:.35rem;padding:.4rem .7rem;border-radius:.5rem;text-decoration:none;background:#222;color:#fff;font-weight:600;}
+  .kk-nav a:hover{background:#2a2a2a}
+</style>
 <body>
 <!-- Themed Age Gate Overlay -->
 <div id="ageGate"

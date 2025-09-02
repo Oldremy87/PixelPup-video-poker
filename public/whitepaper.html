@@ -10,7 +10,13 @@ background:radial-gradient(1200px 800px at 50% -20%,#13203b 0%,#0b0f19 60%,#0507
 h1,h2{margin:.2rem 0 .5rem} .readout{color:var(--text-dim);font-size:13px}
 footer{opacity:.9;color:var(--text-dim);font-size:12px;text-align:center;padding:14px 0 6px}
 .hero{display:flex;gap:12px;align-items:center}
-</style></head><body><div class="wrap">
+.kk-nav{position:sticky;top:0;display:flex;gap:.5rem;align-items:center;padding:.5rem .75rem;background:#111;color:#fff;border-bottom:1px solid #333;z-index:1000;}
+  .kk-nav a{display:inline-flex;align-items:center;gap:.35rem;padding:.4rem .7rem;border-radius:.5rem;text-decoration:none;background:#222;color:#fff;font-weight:600;}
+  .kk-nav a:hover{background:#2a2a2a}
+</style></head><body>
+  <nav class="kk-nav">
+  <a href="/" class="kk-home" aria-label="Go to Home">🏠 Home</a>
+  <div class="wrap">
   <div class="panel">
     <div class="hero">
       <!-- “Puppy with glasses” inline SVG -->

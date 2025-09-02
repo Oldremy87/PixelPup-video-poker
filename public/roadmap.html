@@ -23,7 +23,13 @@ h1{margin:.2rem 0 .5rem} .readout{color:var(--text-dim);font-size:13px} footer{o
 .hero{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
 .art-wrap svg{display:block;width:200px;max-width:45vw;height:auto}
 @media (max-width:520px){ .art-wrap svg{width:160px} }
-</style></head><body><div class="wrap">
+.kk-nav{position:sticky;top:0;display:flex;gap:.5rem;align-items:center;padding:.5rem .75rem;background:#111;color:#fff;border-bottom:1px solid #333;z-index:1000;}
+  .kk-nav a{display:inline-flex;align-items:center;gap:.35rem;padding:.4rem .7rem;border-radius:.5rem;text-decoration:none;background:#222;color:#fff;font-weight:600;}
+  .kk-nav a:hover{background:#2a2a2a}
+</style></head><body>
+  <nav class="kk-nav">
+  <a href="/" class="kk-home" aria-label="Go to Home">🏠 Home</a>
+  <div class="wrap">
   <div class="panel">
     <div class="hero">
      
