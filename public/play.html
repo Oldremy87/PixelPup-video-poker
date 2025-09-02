@@ -751,7 +751,8 @@ async function loadLeaderboard(){
   const m = Math.ceil(ms / 60000);
   return `${m} minute${m !== 1 ? 's' : ''}`;
 }
-
+const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+const REVEAL_EXTRA_MS = 250; // 1/4 second
 async function startGame() {
   // 1) Start-hand gate FIRST
   let start;
@@ -907,6 +908,7 @@ async function draw() {
     // Let the browser paint the new hand (and decode images) before blocking alerts
     await nextPaint();
     await waitForImagesDecoded(handContainer);
+    await sleep(REVEAL_EXTRA_MS);
      if (data.bonuses?.length) {
       alert('Bonuses unlocked:\n' + data.bonuses.map(b => `• ${Math.floor((b.amount||0)/100)} KIBL — ${b.name}`).join('\n'));
     }
