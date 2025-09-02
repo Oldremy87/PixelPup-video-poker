@@ -933,7 +933,20 @@ async function onDailyReward() {
 }
 
 async function onClaimPayout() {
-  if (totalPayout === 0) { alert('No payout to claim!'); return; }
+    if (totalPayout === 0) {
+    // Double-check with the server in case the local variable is stale
+    try {
+      const r = await fetch(API.profile, { credentials: 'include' });
+      const d = await r.json();
+      if (d?.ok) {
+        const bankUnits = Math.floor((d.bank || 0) / 100);
+        totalPayout = bankUnits;
+        if (payoutEl) payoutEl.textContent = `Total Payout: ${bankUnits} KIBL`;
+        if (payoutBtn) payoutBtn.disabled = (totalPayout === 0);
+      }
+    } catch {}
+    if (totalPayout === 0) { alert('No payout to claim!'); return; }
+ }
 
   const playerAddress = addressInput.value.trim();
   if (!/^nexa:/.test(playerAddress)) {
