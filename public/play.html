@@ -715,8 +715,10 @@ async function loadProfile(){
     const r = await fetch(API.profile, { credentials: 'include' });
     const d = await r.json();
     if (!d.ok) return;
-    const bankUnits = Math.floor((d.bank||0)/100);
+   const bankUnits = Math.floor((d.bank || 0) / 100);
+    totalPayout = bankUnits;                                 // <-- keep the variable in sync
     if (payoutEl) payoutEl.textContent = `Total Payout: ${bankUnits} KIBL`;
+  if (payoutBtn) payoutBtn.disabled = (totalPayout === 0); // <-- button state reflects balance
     const ach = Object.entries(d.achievements).filter(([_,v])=>v).map(([k])=>k).join(', ');
     if (achievementsEl) achievementsEl.textContent = ach ? `Achievements: ${ach}` : 'Achievements: —';
   }catch{}
