@@ -208,22 +208,43 @@ setInterval(() => {
     if (now - record.windowStart >= SIX_HOURS_MS) handsByIp.delete(ip);
   }
 }, 6 * 60 * 1000);
+// Authoritative profile: session drives `bank`,
+// DB is used for read-only stats (wins/achievements)
 app.get('/api/profile', async (req, res) => {
   try {
-    await getOrCreateUser(req.uid);
-    const s = await loadStats(req.uid);
-    res.json({
+    // Ensure session exists and has a numeric bank (minor units)
+    ensureBank(req);
+
+    // Avoid any caching of this endpoint
+    res.set('Cache-Control', 'no-store');
+
+    // Kick off DB work in parallel, but NEVER let it block returning the session bank
+    const [userOk, statsOk] = await Promise.allSettled([
+      getOrCreateUser(req.uid),
+      loadStats(req.uid)
+    ]);
+    const s = statsOk.status === 'fulfilled' ? statsOk.value : null;
+
+    // Session is the single source of truth for the live balance
+    const bankMinor = Number(req.session.bank) || 0;
+
+    return res.json({
       ok: true,
-      wins: s?.wins||0,
+      bank: bankMinor, // <-- client uses this to render "Total Payout"
+      wins: s?.wins || 0,
       achievements: {
-        firstWin: !!s?.first_win, w10: !!s?.w10, w25: !!s?.w25, w50: !!s?.w50, royalFlush: !!s?.royal_win
-      },
-      bank: Number(s?.bank_minor||0)
+        firstWin:   !!s?.first_win,
+        w10:        !!s?.w10,
+        w25:        !!s?.w25,
+        w50:        !!s?.w50,
+        royalFlush: !!s?.royal_win
+      }
     });
   } catch (e) {
-    res.status(500).json({ ok:false, error:'profile_error' });
+    return res.status(500).json({ ok: false, error: 'profile_error' });
   }
 });
+
 app.get('/api/leaderboard', async (req, res) => {
   try {
     const p = await db();
@@ -787,7 +808,7 @@ app.post('/api/payout', async (req, res) => {
            remainingKIBL: Math.floor(req.session.bank / 100),
            message: `Sent ${sendWholeKibl} KIBL to ${playerAddress}`
          };
-         return res.json(successResponse); 
+         return res.json(successResponse);  
 
   } catch (error) {
     logger.error('Token send failed', { error: String(error) });
