@@ -860,7 +860,16 @@ async function startGame() {
   function toggleHold(i) {
     held[i] = !held[i];
     renderHand();
-  }
+  }const nextPaint = () => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+
+async function waitForImagesDecoded(el) {
+  const imgs = Array.from(el.querySelectorAll('img'));
+  await Promise.all(imgs.map(img => {
+    if ('decode' in img) return img.decode().catch(()=>{});
+    if (img.complete) return Promise.resolve();
+    return new Promise(res => { img.onload = img.onerror = () => res(); });
+  }));
+}
 async function draw() {
   try {
     const resp = await postWithCsrf(API.draw, {
@@ -883,20 +892,32 @@ async function draw() {
       return;
     }
 
-    hand = data.hand; renderHand();
+   hand = data.hand; 
+    renderHand(); // inserts <img> cards
     const creditUnits  = Math.floor((data.credit || 0) / 100);
     const balanceUnits = Math.floor((data.sessionBalance || 0) / 100);
-    if (creditUnits > 0) alert(`You won ${creditUnits} KIBL this hand!`);
-    if (data.bonuses?.length) {
-      alert('Bonuses unlocked:\n' + data.bonuses.map(b => `• ${Math.floor((b.amount||0)/100)} KIBL — ${b.name}`).join('\n'));
-    }
+
+     // Update UI state immediately so this paint reflects the new values
     if (payoutEl) payoutEl.textContent = `Total Payout: ${balanceUnits} KIBL`;
     totalPayout = balanceUnits;
+    if (payoutBtn) payoutBtn.disabled = (totalPayout === 0);
+    if (dealBtn)  dealBtn.disabled  = false;
+    if (drawBtn)  drawBtn.disabled  = true;
 
-    await Promise.all([loadProfile(), loadLeaderboard()]);
-    payoutBtn && (payoutBtn.disabled = (totalPayout === 0));
-    dealBtn && (dealBtn.disabled = false);
-    drawBtn && (drawBtn.disabled = true);
+    // Let the browser paint the new hand (and decode images) before blocking alerts
+    await nextPaint();
+    await waitForImagesDecoded(handContainer);
+     if (data.bonuses?.length) {
+      alert('Bonuses unlocked:\n' + data.bonuses.map(b => `• ${Math.floor((b.amount||0)/100)} KIBL — ${b.name}`).join('\n'));
+    }
+    if (creditUnits > 0) {
+      alert(`You won ${creditUnits} KIBL this hand!`);
+    }
+    // Fetch profile/leaderboard AFTER the user sees cards + alerts
+    // (non-blocking for snappier UX)
+    loadProfile();
+    loadLeaderboard();
+    
   } catch (e) {
     console.error(e);
     alert('Draw failed.');

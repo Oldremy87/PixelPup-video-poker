@@ -774,8 +774,9 @@ app.post('/api/payout', async (req, res) => {
       } else resolve();
     });
 
-      try {
-          await db.query(
+     try {
+         const p = await db();
+        await p.query(
             `INSERT INTO payouts(address, amount_kibl, tx_id, session_id, ip, status)
              VALUES ($1,$2,$3,$4,$5,'success')`,
             [playerAddress, sendWholeKibl, txId, req.sessionID, req.ip]  // <-- use txId
@@ -786,7 +787,8 @@ app.post('/api/payout', async (req, res) => {
 
     try {
       await getOrCreateUser(req.uid);
-      await db.query(
+      const p = await db();
+      await p.query(
         'UPDATE user_stats SET bank_minor = GREATEST(bank_minor - $2, 0), last_seen_at = now() WHERE user_id = $1',
         [req.uid, sendMinor]
       );
