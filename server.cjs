@@ -13,7 +13,8 @@ const cookieParser = require('cookie-parser');
 const { Pool } = require('pg');
 const csrf = require('csurf');
 const PgSession = require('connect-pg-simple')(session);
-const { randomUUID } = require('crypto');
+const {randomBytes, createHash, randomUUID } = require('crypto');
+const { ok } = require('assert');
 
 const app = express();
 app.set('trust proxy', 1);
@@ -208,29 +209,26 @@ setInterval(() => {
     if (now - record.windowStart >= SIX_HOURS_MS) handsByIp.delete(ip);
   }
 }, 6 * 60 * 1000);
-// Authoritative profile: session drives `bank`,
-// DB is used for read-only stats (wins/achievements)
+
 app.get('/api/profile', async (req, res) => {
   try {
-    // Ensure session exists and has a numeric bank (minor units)
     ensureBank(req);
 
     // Avoid any caching of this endpoint
     res.set('Cache-Control', 'no-store');
 
-    // Kick off DB work in parallel, but NEVER let it block returning the session bank
     const [userOk, statsOk] = await Promise.allSettled([
       getOrCreateUser(req.uid),
       loadStats(req.uid)
     ]);
     const s = statsOk.status === 'fulfilled' ? statsOk.value : null;
-
-    // Session is the single source of truth for the live balance
+    const displayId = await ensureDisplayId(req.uid);
     const bankMinor = Number(req.session.bank) || 0;
 
     return res.json({
       ok: true,
-      bank: bankMinor, // <-- client uses this to render "Total Payout"
+      bank: bankMinor, 
+      displayId,
       wins: s?.wins || 0,
       achievements: {
         firstWin:   !!s?.first_win,
@@ -243,7 +241,66 @@ app.get('/api/profile', async (req, res) => {
   } catch (e) {
     return res.status(500).json({ ok: false, error: 'profile_error' });
   }
-});
+});// hash-stream PRNG (deterministic, verifiable)
+function* hashStream(seedHex) {
+  let h = seedHex;
+  for (;;) {
+    h = sha256hex(h);
+    // use first 8 hex chars as a 32-bit integer → [0,1)
+    const u32 = parseInt(h.slice(0, 8), 16) >>> 0;
+    yield u32 / 0xffffffff;
+  }
+}
+
+// Fisher–Yates with a provided random stream
+function shuffleDeterministic(deck, rng) {
+  const a = deck.slice();
+  for (let i = a.length - 1; i > 0; i--) {
+    const r = rng.next().value;                      // 0..1
+    const j = Math.floor(r * (i + 1));              // 0..i
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+const sha256hex = (s) => createHash('sha256').update(String(s)).digest('hex');
+const randHex = (n = 32) => randomBytes(n).toString('hex');
+
+// hash-stream PRNG (deterministic, verifiable)
+function* hashStream(seedHex) {
+  let h = seedHex;
+  for (;;) {
+    h = sha256hex(h);
+    // use first 8 hex chars as a 32-bit integer → [0,1)
+    const u32 = parseInt(h.slice(0, 8), 16) >>> 0;
+    yield u32 / 0xffffffff;
+  }
+}
+
+// Fisher–Yates with a provided random stream
+function shuffleDeterministic(deck, rng) {
+  const a = deck.slice();
+  for (let i = a.length - 1; i > 0; i--) {
+    const r = rng.next().value;                      // 0..1
+    const j = Math.floor(r * (i + 1));              // 0..i
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+async function ensureDisplayId(uid) {
+  const p = await db();
+  // make a deterministic, stable ID from uid (no PII, no profanity risk)
+  const left = String(uid).slice(0,4).toUpperCase();
+  const right = String(uid).slice(-4).toUpperCase();
+  const display = `PUP-${left}…${right}`;
+  await p.query(
+    `UPDATE users
+       SET display_id = COALESCE(display_id, $2),
+           last_seen_at = now()
+     WHERE user_id = $1`,
+    [uid, display]
+  );
+  return display;
+}
 
 app.get('/api/leaderboard', async (req, res) => {
   try {
@@ -272,7 +329,6 @@ app.get('/api/leaderboard', async (req, res) => {
 const RANKS = ['Ace','2','3','4','5','6','7','8','9','10','Jack','Queen','King'];
 const SUITS = ['Clubs','Diamonds','Hearts','Spades'];
 const RANK_VALUE = { '2':2,'3':3,'4':4,'5':5,'6':6,'7':7,'8':8,'9':9,'10':10,'Jack':11,'Queen':12,'King':13,'Ace':14 };
-async function db() { if (!pool) throw new Error('No DATABASE_URL'); return pool; }
 
 async function getOrCreateUser(uid){
   const p = await db();
@@ -328,16 +384,10 @@ function ensureBank(req) {
   if (!req.session.lastDrawAt) req.session.lastDrawAt = 0;
   if (!req.session.deck) req.session.deck = [];
   if (typeof req.session.hasDrawn !== 'boolean') req.session.hasDrawn = false;
+  if (!req.session.round) {
+  req.session.round = null; // { handId, commit, serverSeed, clientSeed }
+      }
   if (!req.session.currentHand) req.session.currentHand = null;
-}
-
-function makeDeck() {
-  const d = [];
-  for (const s of SUITS) for (const r of RANKS) {
-    d.push({ rank: r, suit: s, filename: `${r}_of_${s}.png`, displayText: `${r} of ${s}` });
-  }
-  for (let i = d.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [d[i], d[j]] = [d[j], d[i]]; }
-  return d;
 }
 
 function evalHand(hand) {
@@ -382,41 +432,109 @@ function gateStartHand(req){
   return { ok:true, remaining: Math.max(0, HANDS_LIMIT - rec.count), windowMs: HANDS_WINDOW_MS };
 }
 
-const drawLimiter = rateLimit({ HANDS_WINDOW_MS: 60 * 1000, max: 60, standardHeaders: true, legacyHeaders: false });
-const dealLimiter = rateLimit({
-  HANDS_WINDOW_MS: 60 * 1000,
-  max: 40,
-  standardHeaders: true,
-  legacyHeaders: false
-});
-app.post('/api/start-hand', (req, res) => {
+const drawLimiter = rateLimit({ windowMs: 60 * 1000, max: 60, standardHeaders: true, legacyHeaders: false });
+const dealLimiter = rateLimit({ windowMs: 60 * 1000, max: 40, standardHeaders: true, legacyHeaders: false });
+
+app.post('/api/start-hand', async (req, res) => {
   try {
     const g = gateStartHand(req);
     if (!g.ok) return res.status(403).json(g);
+
     ensureBank(req);
+
+    // optional client seed from body (hex string or any string)
+    const clientSeed = (req.body && typeof req.body.clientSeed === 'string')
+      ? req.body.clientSeed.trim()
+      : '';
+
+    const handId     = randomUUID();
+    const serverSeed = randHex(32);            // 32 bytes → 64 hex
+    const commitHash = sha256hex(serverSeed);  // publish now, reveal later
+
+    // stash round in session
+    req.session.round = {
+      handId,
+      commit: commitHash,
+      serverSeed,
+      clientSeed,
+      revealed: false
+    };
     req.session.hasDrawn = false;
-    return res.json(g);
+
+    // best-effort audit trail; do not fail the request on DB hiccup
+    try {
+      const p = await db();
+      await getOrCreateUser(req.uid);
+      await ensureDisplayId(req.uid); // make sure display_id exists once
+      await p.query(
+        `INSERT INTO fair_rounds(hand_id, user_id, commit_hash, client_seed)
+         VALUES ($1,$2,$3,$4)`,
+        [handId, req.uid, commitHash, clientSeed || null]
+      );
+    } catch (e) {
+      logger.error('fair_rounds insert', { e: String(e) });
+    }
+
+    // return the gate info + fair commit
+    return res.json({
+      g,
+      ok:true,               // { ok:true, remaining, windowMs, ... }
+      handId,
+      commit: commitHash
+    });
+
   } catch (e) {
     console.error('start-hand error', e);
     return res.status(500).json({ ok:false, error:'start_hand_error' });
   }
 });
 
-
+// Deterministic /api/deal using your "2_of_Clubs.png" naming
 app.post('/api/deal', dealLimiter, (req, res) => {
- const ip = getClientIp(req);
+  // keep your IP gate behavior
+  const ip = getClientIp(req);
   const rec = handsByIp.get(ip);
   if (!rec) return res.status(429).json({ ok:false, error:'use_start_hand_first' });
 
-  const deck = makeDeck();
-  const hand = deck.splice(0, 5);
+  ensureBank(req);
 
-  req.session.deck = deck;
+  const round = req.session.round;
+  if (!round || !round.handId || !round.serverSeed) {
+    return res.status(400).json({ ok:false, error:'use_start_hand_first' });
+  }
+
+  // === deterministic seed everyone can reproduce ===
+  // IMPORTANT: any change to this string or deck build order affects verification.
+  const seedString = `${round.serverSeed}:${round.clientSeed || ''}:${round.handId}:deal`;
+  const rng = hashStream(sha256hex(seedString)); // helpers you added earlier
+
+  // === build canonical unshuffled deck (Suits outer, Ranks inner) ===
+  const deck0 = [];
+  for (const s of SUITS) {
+    for (const r of RANKS) {
+      deck0.push({
+        rank: r,
+        suit: s,
+        filename: `${r}_of_${s}.png`,   // <- "2_of_Clubs.png", "Jack_of_Spades.png"
+        displayText: `${r} of ${s}`
+      });
+    }
+  }
+  // === deterministic shuffle → first 5 are the hand ===
+  const deck = shuffleDeterministic(deck0, rng); // helper from earlier patch
+  const hand = deck.slice(0, 5);
+  // persist remaining deck for draw() to pull replacements from (also deterministic)
+  req.session.deck = deck.slice(5);
   req.session.currentHand = hand;
   req.session.hasDrawn = false;
-
-  return res.json({ ok: true, hand });
+  // include fair commit bits so UI can show “Commit …”
+  return res.json({
+    ok: true,
+    hand,
+    fair: { handId: round.handId, commit: round.commit }
+  });
 });
+
 
 async function saveAfterDraw(uid, { creditMinor, isWin, isRoyal, flags }) {
   const p = await db();
@@ -465,9 +583,12 @@ app.post('/api/draw', drawLimiter, async (req, res) => {
     // ---- Perform draw: replace only non-held cards ----
     let hand = req.session.currentHand.slice();
     let deck = req.session.deck.slice();
-    for (let i = 0; i < 5; i++) {
-      if (!held[i]) {
-        if (deck.length === 0) deck = makeDeck();
+        for (let i = 0; i < 5; i++) {
+         if (!held[i]) {
+          if (deck.length === 0) {
+          // should never happen with single-draw flow; guard just in case
+          return res.status(500).json({ ok: false, error: 'deck_underflow' });
+        }
         hand[i] = deck.shift();
       }
     }
@@ -548,6 +669,30 @@ app.post('/api/draw', drawLimiter, async (req, res) => {
         resolve();
       }
     });
+      const round = req.session.round;
+let fair = null;
+
+if (round && !round.revealed) {
+  fair = {
+    handId: round.handId,
+    commit: round.commit,
+    serverSeed: round.serverSeed,
+    clientSeed: round.clientSeed || null,
+    algo: "FY shuffle with hash-stream; seed = sha256(serverSeed:clientSeed:handId:deal)"
+  };
+  req.session.round.revealed = true;
+
+  // best-effort DB reveal
+  try {
+    const p = await db();
+    await p.query(
+      `UPDATE fair_rounds
+          SET server_seed = $2, revealed_at = now()
+        WHERE hand_id = $1`,
+      [round.handId, round.serverSeed]
+    );
+  } catch (e) { logger.error('fair_rounds reveal', { e: String(e) }); }
+}
 
     // respond (minor units; UI divides by 100)
     return res.json({
@@ -558,7 +703,8 @@ app.post('/api/draw', drawLimiter, async (req, res) => {
       bonuses,                         // [{ name, amount (minor) }]
       sessionBalance: req.session.bank,// minor units
       stats: req.session.stats,
-      points: pointsEarned
+      points: pointsEarned,
+      fair
     });
   } catch (err) {
     console.error('draw error', err);
@@ -566,10 +712,56 @@ app.post('/api/draw', drawLimiter, async (req, res) => {
   }
 });
 
-
-
-
-
+app.get('/api/fair/:handId', async (req, res) => {
+  try {
+    const p = await db();
+    const { rows } = await p.query(
+      `SELECT hand_id, commit_hash, server_seed, client_seed, created_at, revealed_at
+         FROM fair_rounds
+        WHERE hand_id = $1`,
+      [req.params.handId]
+    );
+    if (!rows.length) return res.status(404).json({ ok:false, error:'not_found' });
+    const r = rows[0];
+    return res.json({
+      ok: true,
+      handId: r.hand_id,
+      commit: r.commit_hash,
+      serverSeed: r.server_seed || null,
+      clientSeed: r.client_seed || null,
+      createdAt: r.created_at,
+      revealedAt: r.revealed_at,
+      algo: "deck = shuffleDeterministic(FY, rng=hashStream(sha256(serverSeed:clientSeed:handId:deal)))"
+    });
+  } catch (e) {
+    return res.status(500).json({ ok:false, error:'server_error' });
+  }
+});
+app.get('/api/fair/:handId', async (req, res) => {
+  try {
+    const p = await db();
+    const { rows } = await p.query(
+      `SELECT hand_id, commit_hash, server_seed, client_seed, created_at, revealed_at
+         FROM fair_rounds
+        WHERE hand_id = $1`,
+      [req.params.handId]
+    );
+    if (!rows.length) return res.status(404).json({ ok:false, error:'not_found' });
+    const r = rows[0];
+    return res.json({
+      ok: true,
+      handId: r.hand_id,
+      commit: r.commit_hash,
+      serverSeed: r.server_seed || null,
+      clientSeed: r.client_seed || null,
+      createdAt: r.created_at,
+      revealedAt: r.revealed_at,
+      algo: "deck = shuffleDeterministic(FY, rng=hashStream(sha256(serverSeed:clientSeed:handId:deal)))"
+    });
+  } catch (e) {
+    return res.status(500).json({ ok:false, error:'server_error' });
+  }
+});
 const rewardLimiter = rateLimit({ windowMs: 60 * 1000, max: 12, standardHeaders: true, legacyHeaders: false });
 // DAILY REWARD (minor units throughout)
 app.post('/api/daily-reward', rewardLimiter, async (req, res) => {
@@ -631,8 +823,6 @@ app.post('/api/daily-reward', rewardLimiter, async (req, res) => {
     return res.status(500).json({ ok: false, error: 'server_error' });
   }
 });
-
-
 
 // =================== Payout (minor units throughout) ===================
 const usedCaptchaTokens   = new Set();                  // replay defense
