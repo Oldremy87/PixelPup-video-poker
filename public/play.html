@@ -447,8 +447,8 @@
     @NexaKennelKlub
   </a>
       <a class="btn btn-ghost" href="/"              class="kk-home" aria-label="Go to Home">🏠 Home</a>
-      <a class="btn btn-ghost" href="pointstable.html">Point Table</Table></a>
-      <a class="btn btn-ghost" href="achievements.html">Achievements</a>
+     
+      
 
 
   
@@ -466,12 +466,14 @@
     <h1>Table</h1>
     <div class="controls">
       <p id="fairInfo" class="readout"></p>
-      <div id="achievements" class="readout"></div>
+      
       <button id="deal" class="btn btn-primary" disabled>Feed the dealer</button>
       <button id="draw" class="btn" disabled>Draw</button>
     </div>
     <div id="hand" class="card-hand" aria-live="polite"></div>
     <p class="readout">Tap a card to keep it for the draw.</p>
+    <a class="btn btn-ghost" href="achievements.html">Achievements</a>
+     <a class="btn btn-ghost" href="pointstable.html">Point Table</Table></a>
   </div>
 
   <!-- RIGHT SIDEBAR: TOTAL + CLAIM + DAILY -->
@@ -753,7 +755,7 @@ async function loadLeaderboard(){
   return `${m} minute${m !== 1 ? 's' : ''}`;
 }
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
-const REVEAL_EXTRA_MS = 400 ; 
+const REVEAL_EXTRA_MS = 500 ; 
 async function startGame() {
   // 1) Start-hand gate FIRST
   let start;
