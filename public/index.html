@@ -106,48 +106,24 @@ nav.kk-nav a:hover{ background:#2a2a2a; }
     </svg>
     @NexaKennelKlub
   </a>
+  <a class="btn" href="docs.html">Read the FAQ</a>
   </div>
 </header>
 
   </header>
 
-  <div class="wrap">
-    <div class="panel" id="airdropPanel">
-  <h2 style="margin:0 0 6px;">Alpha Airdrop</h2>
-  <p class="readout">Snapshot window: <strong>Sep 2, 00:00 UTC → Sep 5, 00:00 UTC</strong>.</p>
-  <div id="airdropCountdown" class="season-banner" role="status" aria-live="polite"></div>
-  <ul class="readout" style="margin-top:8px;">
-    <li>Eligibility: receive <strong>≥ 10,000 KIBL</strong> in successful payouts during the window (aggregated).</li>
-    <li>One collectible per eligible <strong>nexa:</strong> address.</li>
-    <li>Cosmetic art only — <strong>no gameplay advantage</strong>, no token value, 18+.</li>
-  </ul>
-  <div class="controls">
-    <a class="btn btn-ghost" href="airdrop.html">Details</a>
-  </div>
-</div>
-
-<script>
-// 72h window (UTC)
-const SNAP_START = new Date('2025-09-02T00:00:00Z');
-const SNAP_END   = new Date('2025-09-05T00:00:00Z');
-function fmt(ms){const s=Math.max(0,Math.floor(ms/1000)),d=Math.floor(s/86400),
-h=Math.floor((s%86400)/3600),m=Math.floor((s%3600)/60),ss=s%60,p=n=>String(n).padStart(2,'0');
-return (d?`${d}d `:'')+`${p(h)}:${p(m)}:${p(ss)}`;}
-function tick(){
-  const el=document.getElementById('airdropCountdown'); if(!el) return;
-  const now=new Date();
-  if(now<SNAP_START) el.textContent=`Starts in ${fmt(SNAP_START-now)} (UTC)`;
-  else if(now<SNAP_END) el.textContent=`Ends in ${fmt(SNAP_END-now)} (UTC)`;
-  else el.textContent=`Window closed — snapshot taken`;
-}
-tick(); setInterval(tick,1000);
-</script>
     <section class="panel hero">
-      <h2>PixelPup Poker — Alpha is live</h2>
+      <title>KennelKlub — Season 0 Mid-Alpha (Poker + Blackjack)</title>
       <p class="readout">Not gambling • No real money • Tokens have no monetary value • Age 18+</p>
+  <div class="wrap">
+    <h1>🐾 KennelKlub Arcade — <span style="color:var(--accent-2)">Season 0 Mid-Alpha</span></h1>
+    <p class="readout">
+      Poker polished · <strong>Blackjack (Alpha)</strong> added · Achievements & Points live ·
+      Provably fair (commit + hand ID in the UI)
+    </p>
       <div class="cta">
         <a class="btn btn-primary" href="play.html">Play the Alpha</a>
-        <a class="btn" href="docs.html">Read the FAQ</a>
+       <a class = "btn btn-primary" href="blackjack.html">Play BlackJack</a>
       <a class="btn btn-telegram" href="https://t.me/NexaKennelKlub" target="_blank" rel="noopener noreferrer">
     <!-- Telegram SVG -->
     <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" style="width:18px;height:18px;margin-right:6px;">
@@ -157,23 +133,44 @@ tick(); setInterval(tick,1000);
     Join Telegram
   </a>
       </div>
-    </section>
+      <section class="panel wrap" style="margin-top:12px">
+  <h2 style="margin:6px 0 0">What’s New</h2>
+  <ul class="readout" style="margin:8px 0 0 18px; line-height:1.55">
+    <li>🃏 Blackjack enters Alpha</li>
+    <li>♠️ Poker polish + Achievements & Points live</li>
+    <li>🏆 Dedicated Achievements/Points pages for both games</li>
+    <li>🛡️ Provably fair: commit + hand ID shown in the player UI</li>
+    <li>🗺️ Roadmap & whitepaper refreshed to match current strategy</li>
+  </ul>
+</section>
+    <section class="wrap" style="margin-top:12px">
+  <div class="grid">
+    <article class="panel">
+      <h3 style="margin-top:6px">Secure & Fair</h3>
+      <p class="readout">
+        Commit–reveal is <strong>visible in the UI</strong> for Poker & Blackjack:
+        each hand shows a locked <em>commit</em> before deal and a traceable <em>hand ID</em> after.
+        No funny business—provably fair by design.
+      </p>
+    </article>
 
-    <section class="grid">
-      <div class="panel">
-        <h3>Secure & Fair</h3>
-        <p class="readout">hCaptcha, CSRF, rate limits, and server-side balances to prevent abuse.</p>
-      </div>
-      <div class="panel">
-        <h3>Compliance First</h3>
-        <p class="readout">Clear TOS, Privacy, Disclaimer, and age gate—no real-money gambling.</p>
-      </div>
-      <div class="panel">
-        <h3>Community Driven</h3>
-        <p class="readout">Hop into Telegram/X to report bugs, suggest features, and shape the roadmap.</p>
-      </div>
-    </section>
+    <article class="panel">
+      <h3 style="margin-top:6px">Season 0 Arcade</h3>
+      <p class="readout">
+        Poker polish, <strong>Blackjack (Alpha)</strong>, and <strong>Achievements & Points</strong> for both games.
+        Leaderboards are live—every pawprint counts.
+      </p>
+    </article>
+
+    <article class="panel">
+      <h3 style="margin-top:6px">Compliance & Community</h3>
+      <p class="readout">
+        Transparent growth with <strong>Wyoming LLC</strong> in progress.
+        Alpha Tester NFTs (16 minted) and community feedback shape what pups build next.
+      </p>
+    </article>
   </div>
+</section>
 
   <footer>
     © 2025 KIBL / PixelPup • Stay shiny 🐶✨ •

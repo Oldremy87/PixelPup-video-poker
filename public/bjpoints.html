@@ -294,126 +294,65 @@
   line-height: 1;
   /* optional tiny nudge if you want it a hair lower: */
   /* transform: translateY(2px); */
-}
-</style>
+} 
+  </style>
 </head>
 <body>
   <header>
     <div class="brand">
       <div class="brand-badge">KK</div>
-      <h1>Achievements</h1>
+      <h1 style="margin:0">Blackjack Points</h1>
     </div>
-    <nav class="cta">
-      <a class="btn btn-primary" href="play.html">Play Alpha</a>
-      <a class="btn btn-ghost" href="paytable.html">Paytable</a>
+    <nav>
+      <a class="btn btn-primary" href="blackjack.html">Play Blackjack</a>
+      <a class="btn btn-ghost" href="bjachievements.html">BJ Achievements</a>
       <a class="btn btn-ghost" href="index.html">Home</a>
     </nav>
   </header>
 
   <div class="wrap">
-    <div class="panel" id="summary">
-      <p class="readout">Earn fun, cosmetic bonuses while testing. KIBL has no monetary value; 18+ only.</p>
-      <p class="readout" id="winsLine">Wins: —</p>
+    <div class="panel">
+      <p class="readout">
+        Season points for Blackjack (non-wagering mode). These points feed the leaderboard.
+        Base points are awarded per settled player hand; simple modifiers apply.
+      </p>
+
+      <!-- Base outcomes -->
+      <h3 style="margin:8px 0 4px">Base outcomes</h3>
+      <table aria-label="Blackjack Base Points">
+        <thead>
+          <tr><th>Outcome</th><th>Season Points</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Natural Blackjack (two-card 21)</td><td>2</td></tr>
+          <tr><td>Regular Win (beat dealer or dealer busts)</td><td>1</td></tr>
+          <tr><td>Push</td><td>0</td></tr>
+          <tr><td>Bust / Loss</td><td>0</td></tr>
+        </tbody>
+         <h3 style="margin:8px 0 4px">KIBL Rewards</h3>
+      <table aria-label="Blackjack KIBL Rewards">
+        <thead>
+          <tr><th>Outcome</th><th>KIBL Rewards</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Natural Blackjack (two-card 21)</td><td>600</td></tr>
+          <tr><td>Regular Win (beat dealer or dealer busts)</td><td>300</td></tr>
+          <tr><td>Push</td><td>0</td></tr>
+          <tr><td>Bust / Loss</td><td>0</td></tr>
+      </table>
+        </tbody>
+      </table>
+
+      <p class="readout" style="margin-top:10px">
+        Notes: “Natural Blackjack” only counts on the original two-card hand.
+        Dealer stands on soft 17 in the current ruleset. Round totals are floored at <span class="badge">0</span>.
+      </p>
     </div>
-
-    <section class="grid" aria-label="Achievements list">
-      <!-- Live (implemented on server) -->
-      <div class="ach todo" id="ach-firstWin" data-flag="firstWin">
-        <div class="icon">☐</div>
-        <div>
-          <h3>First Fetch <span class="badge">+100 KIBL</span></h3>
-          <p>Win your first hand.</p>
-        </div>
-      </div>
-
-      <div class="ach todo" id="ach-w10" data-flag="w10">
-        <div class="icon">☐</div>
-        <div>
-          <h3>Good Dog ×10 <span class="badge">+1,000 KIBL</span></h3>
-          <p>Win 10 hands total.</p>
-        </div>
-      </div>
-
-      <div class="ach todo" id="ach-w25" data-flag="w25">
-        <div class="icon">☐</div>
-        <div>
-          <h3>Pack Leader ×25 <span class="badge">+2,500 KIBL</span></h3>
-          <p>Win 25 hands total.</p>
-        </div>
-      </div>
-
-      <div class="ach todo" id="ach-w50" data-flag="w50">
-        <div class="icon">☐</div>
-        <div>
-          <h3>Top Dog ×50 <span class="badge">+5,000 KIBL</span></h3>
-          <p>Win 50 hands total.</p>
-        </div>
-      </div>
-
-      <div class="ach todo" id="ach-royal" data-flag="royalFlush">
-        <div class="icon">☐</div>
-        <div>
-          <h3>Regal Pup (Royal Flush) <span class="badge">+50,000 KIBL</span></h3>
-          <p>Hit a Royal Flush.</p>
-        </div>
-      </div>
-
-      <!-- Optional: planned (not live). Keep them clearly marked. -->
-      <!--
-      <div class="ach todo" aria-disabled="true">
-        <div class="icon">☐</div>
-        <div>
-          <h3>Straight Shooter (Planned)</h3>
-          <p>Win 10 straights. (Coming soon)</p>
-        </div>
-      </div>
-      -->
-    </section>
   </div>
 
   <footer>
     © 2025 KIBL / PixelPup • Stay shiny 🐶✨ •
     <a href="tos.html">Terms</a> • <a href="privacy.html">Privacy</a> • <a href="disclaimer.html">Disclaimer</a>
   </footer>
-
-<script>
-// Fetch achievements from /api/profile and mark them
-(async () => {
-  try {
-    const r = await fetch('/api/profile', { credentials: 'include' });
-    const d = await r.json();
-    if (!d?.ok) return;
-
-    // *** POKER ONLY ***
-    const poker = d.stats?.poker || {};
-    const ach   = poker.achievements || {};
-    const wins  = Number(poker.wins || 0);
-
-    // Wins line
-    const winsLine = document.getElementById('winsLine');
-    if (winsLine) winsLine.textContent = `Wins: ${wins}`;
-
-    // Flags coming from server for poker
-    const map = {
-      firstWin:   'ach-firstWin',
-      w10:        'ach-w10',
-      w25:        'ach-w25',
-      w50:        'ach-w50',
-      royalFlush: 'ach-royal'
-    };
-
-    // Mark earned
-    for (const [flag, id] of Object.entries(map)) {
-      const el = document.getElementById(id);
-      if (!el) continue;
-      const earned = !!ach[flag];
-      el.classList.toggle('done', earned);
-      el.classList.toggle('todo', !earned);
-      const ico = el.querySelector('.icon');
-      if (ico) ico.textContent = earned ? '✓' : '☐';
-    }
-  } catch {}
-})();
-</script>
 </body>
 </html>

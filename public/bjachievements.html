@@ -294,18 +294,17 @@
   line-height: 1;
   /* optional tiny nudge if you want it a hair lower: */
   /* transform: translateY(2px); */
-}
-</style>
+} 
+  </style>
 </head>
 <body>
   <header>
     <div class="brand">
       <div class="brand-badge">KK</div>
-      <h1>Achievements</h1>
+      <h1>Blackjack Achievements</h1>
     </div>
     <nav class="cta">
-      <a class="btn btn-primary" href="play.html">Play Alpha</a>
-      <a class="btn btn-ghost" href="paytable.html">Paytable</a>
+      <a class="btn btn-primary"       href="blackjack.html">Play Blackjack</a>
       <a class="btn btn-ghost" href="index.html">Home</a>
     </nav>
   </header>
@@ -316,104 +315,60 @@
       <p class="readout" id="winsLine">Wins: —</p>
     </div>
 
-    <section class="grid" aria-label="Achievements list">
-      <!-- Live (implemented on server) -->
-      <div class="ach todo" id="ach-firstWin" data-flag="firstWin">
-        <div class="icon">☐</div>
-        <div>
-          <h3>First Fetch <span class="badge">+100 KIBL</span></h3>
-          <p>Win your first hand.</p>
-        </div>
-      </div>
+    <section aria-label="Blackjack achievements">
+      <!-- Milestones (mirror poker counts) -->
+    
 
-      <div class="ach todo" id="ach-w10" data-flag="w10">
-        <div class="icon">☐</div>
-        <div>
-          <h3>Good Dog ×10 <span class="badge">+1,000 KIBL</span></h3>
-          <p>Win 10 hands total.</p>
-        </div>
-      </div>
+      <div class="ach" id="ach-w10"><div class="icon">☐</div><div>
+        <h3>Good Dog ×10 <span class="badge">+1,000 KIBL</span></h3>
+        <p>Win 10 hands total.</p></div></div>
 
-      <div class="ach todo" id="ach-w25" data-flag="w25">
-        <div class="icon">☐</div>
-        <div>
-          <h3>Pack Leader ×25 <span class="badge">+2,500 KIBL</span></h3>
-          <p>Win 25 hands total.</p>
-        </div>
-      </div>
+      <div class="ach" id="ach-w25"><div class="icon">☐</div><div>
+        <h3>Pack Leader ×25 <span class="badge">+2,500 KIBL</span></h3>
+        <p>Win 25 hands total.</p></div></div>
 
-      <div class="ach todo" id="ach-w50" data-flag="w50">
-        <div class="icon">☐</div>
-        <div>
-          <h3>Top Dog ×50 <span class="badge">+5,000 KIBL</span></h3>
-          <p>Win 50 hands total.</p>
-        </div>
-      </div>
+      <div class="ach" id="ach-w50"><div class="icon">☐</div><div>
+        <h3>Top Dog ×50 <span class="badge">+5,000 KIBL</span></h3>
+        <p>Win 50 hands total.</p></div></div>
 
-      <div class="ach todo" id="ach-royal" data-flag="royalFlush">
-        <div class="icon">☐</div>
-        <div>
-          <h3>Regal Pup (Royal Flush) <span class="badge">+50,000 KIBL</span></h3>
-          <p>Hit a Royal Flush.</p>
-        </div>
-      </div>
 
-      <!-- Optional: planned (not live). Keep them clearly marked. -->
-      <!--
-      <div class="ach todo" aria-disabled="true">
-        <div class="icon">☐</div>
-        <div>
-          <h3>Straight Shooter (Planned)</h3>
-          <p>Win 10 straights. (Coming soon)</p>
-        </div>
-      </div>
-      -->
-    </section>
-  </div>
-
-  <footer>
+  <footer class="readout" style="text-align:center;opacity:.9;padding:14px 0 6px;">
     © 2025 KIBL / PixelPup • Stay shiny 🐶✨ •
     <a href="tos.html">Terms</a> • <a href="privacy.html">Privacy</a> • <a href="disclaimer.html">Disclaimer</a>
   </footer>
 
-<script>
-// Fetch achievements from /api/profile and mark them
-(async () => {
-  try {
-    const r = await fetch('/api/profile', { credentials: 'include' });
-    const d = await r.json();
-    if (!d?.ok) return;
+  <script>
+    // Populate from /api/profile → stats.blackjack
+    (async () => {
+      try {
+        const r = await fetch('/api/profile', { credentials:'include' });
+        const d = await r.json();
+        if (!d?.ok) return;
 
-    // *** POKER ONLY ***
-    const poker = d.stats?.poker || {};
-    const ach   = poker.achievements || {};
-    const wins  = Number(poker.wins || 0);
+        const bj  = d.stats?.blackjack || {};
+        const ach = bj.achievements || {};
+        const wins = Number(bj.wins || 0);
 
-    // Wins line
-    const winsLine = document.getElementById('winsLine');
-    if (winsLine) winsLine.textContent = `Wins: ${wins}`;
+        const winsLine = document.getElementById('winsLine');
+        if (winsLine) winsLine.textContent = `Wins: ${wins}`;
 
-    // Flags coming from server for poker
-    const map = {
-      firstWin:   'ach-firstWin',
-      w10:        'ach-w10',
-      w25:        'ach-w25',
-      w50:        'ach-w50',
-      royalFlush: 'ach-royal'
-    };
+        // flag → element id map (matches /api/profile keys)
+        const map = {
+          w10:       'ach-w10',
+          w25:       'ach-w25',
+          w50:       'ach-w50',
+        };
 
-    // Mark earned
-    for (const [flag, id] of Object.entries(map)) {
-      const el = document.getElementById(id);
-      if (!el) continue;
-      const earned = !!ach[flag];
-      el.classList.toggle('done', earned);
-      el.classList.toggle('todo', !earned);
-      const ico = el.querySelector('.icon');
-      if (ico) ico.textContent = earned ? '✓' : '☐';
-    }
-  } catch {}
-})();
-</script>
+        for (const [flag, id] of Object.entries(map)) {
+          const el = document.getElementById(id);
+          if (!el) continue;
+          const earned = !!ach[flag];
+          el.classList.toggle('done', earned);
+          const ico = el.querySelector('.icon');
+          if (ico) ico.textContent = earned ? '✓' : '☐';
+        }
+      } catch {}
+    })();
+  </script>
 </body>
 </html>

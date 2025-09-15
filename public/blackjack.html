@@ -1,0 +1,880 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>PixelPup Blackjack</title>
+  <script src="https://hcaptcha.com/1/api.js" async defer></script>
+  <style>
+      /* ===== Retro PixelPup theme (CSP-safe, no external fonts) ===== */
+    :root{
+       --hand-gap: 10px;
+        --card-ratio: 1.6;   /* height = width * ratio; tweak if your art needs */
+      --cardW: 100px;    
+      --bg: #0b0f19;
+      --panel: #111827;
+      --text: #00ffc6;
+      --text-dim: #7fffe6;
+      --accent: #ffcc00;
+      --accent-2: #ff3df7;
+      --accent-3: #6ae3ff;
+      --card-bg: #222638;
+      --card-border: #3af5d9;
+      --danger: #ff5577;
+      --ok: #45ff99;
+    }
+    /* Always hide elements with [hidden], and loaders by default */
+[hidden] { display: none !important; }
+.loading { display: none !important; }     /* stays hidden until .show is added */
+.loading.show { display: block !important; }
+.hidden { display: none !important; }
+
+/* Visually hidden utility */
+.sr-only { 
+  position: absolute !important;
+  width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0,0,1px,1px); white-space: nowrap; border: 0;
+}
+
+    * { box-sizing: border-box; }
+    html, body { height: 100%; }
+    body {
+      margin: 0;
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+      background:
+        radial-gradient(1200px 800px at 50% -20%, #13203b 0%, #0b0f19 60%, #05070d 100%),
+        linear-gradient(180deg, #0b0f19 0%, #05070d 100%);
+      color: var(--text);
+      padding: 24px;
+    }
+  #toasts {
+    position: fixed; top: 12px; right: 12px; z-index: 9999;
+    display: flex; flex-direction: column; gap: 8px;
+    pointer-events: none;
+  }
+  .toast {
+    pointer-events: auto;
+    background: rgba(20,20,20,.92);
+    color: #fff; border-radius: 12px; padding: 10px 12px;
+    box-shadow: 0 8px 24px rgba(0,0,0,.25);
+    font: 600 14px system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+    transform: translateY(-6px); opacity: 0;
+    transition: transform .18s ease-out, opacity .18s ease-out;
+    max-width: 320px; line-height: 1.25;
+    border-left: 4px solid #888;
+  }
+  .toast.show { transform: translateY(0); opacity: 1; }
+  .toast.hide { transform: translateX(8px); opacity: 0; }
+  .toast.win   { border-left-color: #22c55e; }  /* green */
+  .toast.bonus { border-left-color: #06b6d4; }  /* cyan  */
+  .toast.error { border-left-color: #ef4444; }  /* red   */
+
+  .toast .close {
+    float: right; margin-left: 8px; font-weight: 700; cursor: pointer; opacity: .7;
+  }
+  .toast .close:hover { opacity: 1; }
+
+  @media (prefers-reduced-motion: reduce) {
+    .toast, .toast.show, .toast.hide { transition: none; }
+  }
+    /* Header / Nav */
+    header { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin: 0 auto 16px; max-width: 1100px; }
+    .brand { display: flex; align-items: center; gap: 10px; letter-spacing: 0.5px; text-shadow: 0 0 10px rgba(0,255,198,0.6); }
+    .brand-badge {
+      width: 36px; height: 36px; border-radius: 10px; border: 2px solid var(--card-border);
+      box-shadow: 0 0 14px rgba(0,255,198,0.2); display: grid; place-items: center;
+      background: linear-gradient(180deg, rgba(255,255,255,0.06), rgba(255,255,255,0.02));
+      font-weight: 700; color: var(--accent);
+    }
+    nav { display: flex; gap: 10px; flex-wrap: wrap; }
+
+    .btn {
+      appearance: none; border: 0; cursor: pointer; padding: 10px 14px; border-radius: 12px;
+      color: #000; background: var(--accent); text-decoration: none;
+      box-shadow: 0 3px 0 #b59000, 0 0 12px rgba(255,204,0,0.35);
+      font-weight: 700; letter-spacing: .2px; display: inline-flex; align-items: center; gap: 8px;
+      transition: transform .06s ease, filter .12s ease, box-shadow .12s ease;
+      font-size: 12px;
+    }
+    .btn:hover { transform: translateY(-1px); filter: brightness(1.05); }
+    .btn:active { transform: translateY(1px); }
+    .btn:disabled { background: #555; color: #111; box-shadow: none; cursor: not-allowed; }
+    .btn:focus-visible { outline: 2px solid var(--accent-3); outline-offset: 2px; }
+    .btn-telegram{
+      background: var(--accent-3);
+      box-shadow: 0 3px 0 #2aa7bf, 0 0 14px rgba(106,227,255,0.35);
+      color: #021018;
+    }
+    .btn-primary{
+      background: var(--accent-2);
+      color: #120016;
+      box-shadow: 0 3px 0 #a2259c, 0 0 14px rgba(255,61,247,0.35);
+    }
+    .btn-ghost{
+      background: linear-gradient(180deg, rgba(255,255,255,0.06), rgba(255,255,255,0.02));
+      color: var(--text);
+      border: 1px solid rgba(58,245,217,0.35);
+      box-shadow: 0 0 12px rgba(0,255,198,0.18) inset, 0 0 12px rgba(0,255,198,0.12);
+    }
+
+    /* Layout panels */
+    .wrap { max-width: 1100px; margin: 0 auto; }
+
+/* Stack on tablets/phones */
+@media (max-width: 1024px) {
+  .hud { grid-template-columns: 1fr; }
+  .panel-table, .panel-claim { grid-column: 1; }
+}
+  .panel {
+  /* back to a normal card */
+  display: block;
+  background: linear-gradient(180deg, rgba(255,255,255,0.04), rgba(255,255,255,0.01));
+  border: 1px solid rgba(58,245,217,0.3);
+  border-radius: 16px;
+  padding: 16px;
+  backdrop-filter: blur(4px);
+  box-shadow: 0 0 24px rgba(0,255,198,0.06) inset, 0 0 24px rgba(0,255,198,0.08);
+}
+    .controls { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-top: 8px; }
+
+    .readout { color: var(--text-dim); font-size: 12px; margin: 4px 0; }
+    .card {cursor: pointer; user-select: none; }
+    /* Hand area (real cards + simulated placeholders share this) */
+    .card-hand {
+       
+       gap: var(--hand-gap);
+      display: flex;
+      flex-wrap: nowrap;
+      justify-content: center;
+      align-items: flex-start;
+      gap: 10px;
+      min-height: 170px;
+      margin: 12px auto 0;
+      max-width: 1100px;
+    }
+@keyframes pulse {
+  from { opacity: .75; transform: translateY(0); }
+  to   { opacity: 1;   transform: translateY(-1px); }
+}
+    /* Card visual */
+    /* Card + placeholder sizing and layout */
+.card, .placeholder {
+  width: var(--cardW);
+  height: calc(var(--cardW) * var(--card-ratio));          
+  border-radius: 10px;
+  background: var(--card-bg);
+  color: #fff;
+  border: 2px solid var(--card-border);
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto auto; /* image shrinks first, label, then button */
+  align-items: center;
+  justify-items: center;
+  padding: 8px;
+  overflow: hidden;              /* keeps rounded corners clean */
+  position: relative;
+  text-align: center;
+  box-shadow: 0 0 20px rgba(0,255,198,0.1);
+}
+
+/* Dealing placeholders centered and unbroken */
+.placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-style: dashed;
+  font-size: 12px;
+  letter-spacing: .5px;
+  color: var(--text-dim);
+  animation: pulse .9s ease-in-out infinite alternate;
+  white-space: nowrap;           /* never break “Dealing...” into “...ling” */
+  padding: 0 6px;
+}
+.controls { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
+.controls .btn { flex: 1 1 180px; }
+  @media (max-width: 420px) {
+  .controls .btn { flex: 1 1 48%; }
+}
+.card img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+}
+@media (max-width: 720px){
+  header { flex-direction: column; align-items: stretch; gap: 8px; }
+  nav { justify-content: center; }
+  .brand h1 { font-size: 1.35rem; }
+  body { padding: 12px; }
+}
+
+
+/* 2-line clamp for long names like “Queen of Diamonds” */
+.card p {
+  margin: 4px 0 0 0;
+  font-size: 11px;
+  line-height: 1.05;
+  padding: 0 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;         /* clamp to 2 lines */
+  line-clamp: 2;                 /* standard property for compatibility */
+  -webkit-box-orient: vertical;
+}
+
+.card button {
+  display: none;
+  width: 100%;
+  min-height: 30px;              /* reliable tap target */
+  font-size: 11px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  margin-top: 6px;
+  background: var(--accent-2);
+  color: #090014;
+  box-shadow: 0 2px 0 #a2259c, 0 0 10px rgba(255,61,247,0.35);
+}
+
+/* Held badge */
+.card.held::after {
+  content: 'HELD';
+  position: absolute;
+  top: 6px; left: 6px;
+  font-size: 10px;
+  padding: 2px 6px;
+  background: var(--accent);
+  color: #000;
+  border-radius: 6px;
+  box-shadow: 0 0 10px rgba(255,204,0,0.4);
+}
+
+@media (max-width: 600px) {
+  .card, .placeholder { width: 80px; height: 138px; }
+  .card p { font-size: 10px; }
+  .card button { min-height: 28px; font-size: 10px; }
+  .card-hand { min-height: 140px; }
+}
+/* Age gate: focus ring for accessibility */
+#ageGate :focus-visible { outline: 2px solid var(--accent-3); outline-offset: 2px; }
+
+/* Reduce panel text width for readability on narrow screens */
+@media (max-width: 420px){
+  #ageGate .brand h1{ font-size: 1.2rem; }
+}
+
+
+
+    h1 { margin: 0 0 10px; }
+        .faucet-form { display: grid; gap: 10px; }
+    .field { display: grid; gap: 6px; }
+    label { color: var(--text-dim); font-size: 14px; }
+    input[type="text"]{
+      width: 100%; padding: 12px 14px; border-radius: 12px; border: 1px solid rgba(58,245,217,0.35);
+      background: #0f1425; color: var(--text);
+      box-shadow: inset 0 0 14px rgba(0,255,198,0.08);
+    }
+
+    .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+
+    .status {
+      padding: 10px 12px; border-radius: 12px;
+      background: #0f1425; border: 1px solid rgba(58,245,217,0.25);
+      color: var(--text-dim);
+    }
+    .status.ok { border-color: rgba(69,255,153,0.6); color: var(--ok); }
+    .status.err { border-color: rgba(255,85,119,0.65); color: var(--danger); }
+
+    footer { opacity: .9; color: var(--text-dim); font-size: 12px; text-align: center; padding: 14px 0 6px; }
+
+.card-hand {
+  min-height: 220px;
+  margin-top: 16px;
+}
+@media (min-width: 900px) {
+  .card, .placeholder { width: 120px; height: 196px; }
+  .card-hand { min-height: 240px; }
+}
+/* Keep claim pieces tidy */
+.claim-block { margin-top: 12px; }
+#leaderboardList{ list-style:none; padding:0; margin:0; }
+#leaderboardList li{ display:flex; align-items:center; gap:.75rem; padding:.25rem 0; }
+#leaderboardList .who{ min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+#leaderboardList .pts{ margin-left:auto; }
+#leaderboardList li.you{ font-weight:700; }
+/* HUD: desktop = 2 cols, mobile = stacked */
+.hud {
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  gap: 12px;
+}
+.panel-table { grid-column: 1 / 2; }
+.panel-claim { grid-column: 2 / 3; }
+
+@media (max-width: 1024px) {
+  .hud { grid-template-columns: 1fr; }
+  .panel-table, .panel-claim { grid-column: 1 / -1; }  /* <— ensures stacking */
+}
+.callout{
+  margin: 8px 0 12px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: linear-gradient(180deg, rgba(255,255,255,0.06), rgba(255,255,255,0.02));
+  border: 1px solid rgba(58,245,217,0.45);
+  box-shadow: 0 0 18px rgba(0,255,198,0.12) inset, 0 8px 22px rgba(0,0,0,0.25);
+  font-size: 13px; line-height: 1.25;
+}
+.callout strong{ color: var(--accent); margin-right: 6px; }
+.callout .close{
+  float: right; border: 0; background: transparent; color: var(--text);
+  font-weight: 800; cursor: pointer; opacity: .8;
+}
+.callout .close:hover{ opacity: 1; }
+.age-gate{
+  position: fixed; inset: 0; z-index: 10000;
+  display: grid; place-items: center;
+  background: rgba(5,7,13,.88);
+  backdrop-filter: blur(3px);
+}
+.age-card{
+  width: min(92vw, 420px);
+  background: var(--panel);
+  color: var(--text);
+  border: 1px solid rgba(58,245,217,.35);
+  border-radius: 16px;
+  padding: 16px;
+  box-shadow: 0 12px 32px rgba(0,0,0,.4), 0 0 24px rgba(0,255,198,.08) inset;
+}
+@media (prefers-reduced-motion: no-preference){
+  .age-card{ transform: translateY(6px); opacity:.98; animation: agIn .18s ease-out forwards; }
+  @keyframes agIn{ to{ transform: none; opacity:1; } }
+}
+/* You already have this line in your file, keep it: */
+/* #ageGate :focus-visible { outline: 2px solid var(--accent-3); outline-offset: 2px; } */
+
+  </style>
+</head>
+<!-- Age gate -->
+<div id="ageGate" class="age-gate" role="dialog" aria-modal="true" aria-labelledby="ageTitle" hidden>
+  <div class="age-card" role="document">
+    <h2 id="ageTitle" style="margin:0 0 8px">Are you 18 or older?</h2>
+    <p class="readout" style="margin:0 0 12px">
+      PixelPup Blackjack is for adults. Please confirm your age to continue.
+    </p>
+    <div class="controls" style="margin-top:6px">
+      <button id="ageYes" class="btn btn-primary">Yes, enter</button>
+      <a id="ageNo" class="btn btn-ghost" href="/">No, take me back</a>
+    </div>
+  </div>
+</div>
+<script>
+  function fitHandToWidth() {
+    const hand = document.getElementById('hand');
+    if (!hand) return;
+
+    // How wide is the hand area?
+    const styles = getComputedStyle(hand);
+    const gap = parseFloat(styles.gap || styles.columnGap || 10) || 10;
+    const cards = 2, gaps = cards - 1;
+
+    const available = hand.clientWidth; // visible width
+    // space for 5 cards + 4 gaps
+    const perCard = (available - gap * gaps) / cards;
+
+    // clamp so it looks good everywhere
+    const cardW = Math.max(58, Math.min(perCard, 130));
+
+    document.documentElement.style.setProperty('--cardW', cardW + 'px');
+  }
+  </script>
+    
+    <header>
+    <nav>
+  <a class="btn btn-telegram" href="https://t.me/NexaKennelKlub" target="_blank" rel="noopener noreferrer">
+    <!-- Telegram SVG -->
+    <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" style="width:18px;height:18px;margin-right:6px;">
+      <path fill="#1C93E3" d="M12 0a12 12 0 1 0 0 24A12 12 0 0 0 12 0z"/>
+      <path fill="#fff" d="M17.9 7.4c.2-1-.8-1.3-1.6-1l-11 4.2c-.7.3-.7.8-.1 1l2.8.9 6.5-4.1c.3-.2.6-.1.4.1l-5.3 4.9-.2 3.1c.5 0 .7-.2 1-.5l1.7-1.6 2.6 1.9c.6.3 1 .1 1.1-.6l1.9-9.3z"/>
+    </svg>
+    Join Telegram
+  </a>
+
+  <a class="btn btn-ghost" href="https://x.com/Oldremy" target="_blank" rel="noopener noreferrer">
+    <!-- X SVG -->
+    <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" style="width:18px;height:18px;margin-right:6px;">
+      <path fill="currentColor" d="M18.9 2H22l-7.7 8.8L22.7 22h-7.1l-5.5-7.3L3.8 22H1l8.4-9.6L1 2h7.2l5 6.7L18.9 2zM17.6 20h1.9L7.4 4H5.6l12 16z"/>
+    </svg>
+    @Oldremy
+  </a>
+
+  <a class="btn btn-ghost" href="https://x.com/NexaKennelKlub" target="_blank" rel="noopener noreferrer">
+    <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" style="width:18px;height:18px;margin-right:6px;">
+      <path fill="currentColor" d="M18.9 2H22l-7.7 8.8L22.7 22h-7.1l-5.5-7.3L3.8 22H1l8.4-9.6L1 2h7.2l5 6.7L18.9 2zM17.6 20h1.9L7.4 4H5.6l12 16z"/>
+    </svg>
+    @NexaKennelKlub
+  </a>
+      <a class="btn btn-ghost" href="/"              class="kk-home" aria-label="Go to Home">🏠 Home</a>
+  <a class="btn btn-ghost" href="/play.html" aria-current="page">Poker</a>
+
+   <div class="brand">
+      <div class="brand-badge">KK</div>
+      <h1>PixelPup BlackJack</h1>
+    </div>
+</header>
+  <div class="wrap">
+    <div class="hud">
+      <div class="panel" id="bjPanel">
+        <h1>Blackjack</h1>
+        <div id="bjHow" class="callout" role="region" aria-label="How to play blackjack">
+  <strong>How to play:</strong>
+  Get closer to 21 than the dealer without busting. Aces count as 1 or 11. Dealer hits to 16 and stands on 17.
+  Press <em>Feed the dealer</em> to start, then <em>Hit</em> or <em>Stand</em>.
+  <a href="bjpoints.html" class="btn btn-ghost" style="margin-left:8px;">Payouts</a>
+  <button class="close" aria-label="Hide tips">×</button>
+</div>
+         <p id="userTag" class="readout"></p>
+         <a class="btn btn-ghost" href="bjachievements.html">Achievements</a>
+         <a class="btn btn-ghost" href="bjpoints.html">Points</a>
+        
+        <p id="bjFair" class="readout"></p>
+
+        <div class="readout">Dealer</div>
+        <div id="bjDealer" class="card-hand" aria-live="polite"></div>
+
+        <div class="readout">You</div>
+        <div id="bjPlayer" class="card-hand" aria-live="polite"></div>
+
+        <div class="controls">
+          <button id="bjStart"  class="btn btn-primary">Feed the dealer</button>
+          <button id="bjHit"    class="btn" disabled>Hit</button>
+          <button id="bjStand"  class="btn" disabled>Stand</button>
+         <button id="bjDoubleBtn" class="hidden">Double</button>
+          <button id="bjSplitBtn"  class="hidden">Split</button>
+        </div>
+
+        <p id="bjMsg" class="readout"></p>
+       
+      </div>
+
+      <!-- Right sidebar: reuse your existing payout/leaderboard flows -->
+      <div class="panel">
+        <div class="controls">
+           <button id="dailyReward" class="btn btn-ghost">Claim Daily Reward</button>
+          <p id="payoutTotal">Total Payout: 0 KIBL</p>
+        </div>
+
+        <section class="panel" style="margin-top:10px;">
+          <h2>Claim</h2>
+          <div class="field">
+            <label class="readout" for="addressInput">Wallet address</label>
+            <input id="addressInput" placeholder="nexa:..." style="width:100%; padding:10px 12px; border-radius:10px;
+                   border:1px solid rgba(58,245,217,.35); background:#0f1425; color:var(--text)"/>
+          </div>
+          <div class="field">
+            <label class="readout">Human check</label>
+            <div id="payoutCaptcha" class="h-captcha"
+                 data-sitekey="dcc8a3aa-1db0-4d48-9260-df5c25846d92"
+                 data-size="normal"></div>
+          </div>
+          <div class="controls"><button id="ClaimPayout" class="btn btn-primary" type="button">FEED ME! 🐾</button></div>
+          <div id="loading" class="readout" style="display:none;">Processing…</div>
+          <p id="result" class="readout">Idle</p>
+        </section>
+
+        <div class="panel" style="margin-top:10px;">
+          <h2>Season Points Window (Skill Points)</h2>
+          <ol id="leaderboardList" class="leaderboard"></ol>
+          <div class="readout" style="margin-top:6px;">
+   <a class="btn btn-ghost" href="/leaderboard.html?game=blackjack">See full leaderboard →</a>
+</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <audio id="feedSound" src="dogfood.mp3" preload="auto"></audio>
+
+  <script>
+    // ===== shared helpers (copied from play.html so this page is standalone) =====
+    let __csrf = null;
+    async function fetchCsrf(){
+      const r = await fetch('/api/csrf', { credentials:'include' });
+      if (!r.ok) throw new Error('CSRF bootstrap failed');
+      const { csrfToken } = await r.json();
+      __csrf = csrfToken;
+    }
+    async function postWithCsrf(input, init = {}) {
+  const baseHeaders = init.headers ? { ...init.headers } : {};
+  if (init.body && !baseHeaders['Content-Type']) baseHeaders['Content-Type'] = 'application/json';
+
+  // NEW: make sure we have a token before first attempt
+  if (!__csrf) { try { await fetchCsrf(); } catch {} }
+
+  const makeReq = () => fetch(input, {
+    ...init,
+    method: init.method || 'POST',
+    credentials: 'include',
+    headers: { 'x-csrf-token': __csrf || '', ...baseHeaders }
+  });
+
+  let resp = await makeReq();
+  if (resp.status === 403) {
+    const data = await resp.clone().json().catch(() => ({}));
+    if (data?.error === 'bad_csrf') { await fetchCsrf(); resp = await makeReq(); }
+  }
+  return resp;
+}
+async function ensureCsrf(){
+  try {
+    const r = await fetch('/api/csrf', { credentials: 'include' });
+    const j = await r.json();
+    window.csrfToken = j.csrfToken;
+  } catch {}
+}
+document.addEventListener('DOMContentLoaded', ensureCsrf);
+
+   const API = Object.freeze({
+  profile:'/api/profile',
+  daily:'/api/daily-reward',
+  payout:'/api/payout',
+  bj: { start:'/api/bj/start', hit:'/api/bj/hit', stand:'/api/bj/stand', double:'/api/bj/double', split:'/api/bj/split' }
+});
+
+
+    const payoutEl = document.getElementById('payoutTotal');
+    const payoutBtn = document.getElementById('ClaimPayout');
+    const addressInput = document.getElementById('addressInput');
+    const dailyBtn = document.getElementById('dailyReward');
+    const loading  = document.getElementById('loading');
+
+    const bjFair   = document.getElementById('bjFair');
+    const bjDealer = document.getElementById('bjDealer');
+    const bjPlayer = document.getElementById('bjPlayer');
+    const bjMsg    = document.getElementById('bjMsg');
+
+    const btnStart = document.getElementById('bjStart');
+    const btnHit   = document.getElementById('bjHit');
+    const btnStand = document.getElementById('bjStand');
+    const btnDouble = document.getElementById('bjDoubleBtn'); // optional (hidden in alpha)
+    const btnSplit  = document.getElementById('bjSplitBtn');  // optional (hidden in alpha)
+    const leaderboardList = document.getElementById('leaderboardList');
+
+    let totalPayout = 0;
+     function formatWait(ms) {
+  if (!Number.isFinite(ms) || ms <= 0) return 'a bit';
+  const m = Math.ceil(ms / 60000);
+  return `${m} minute${m !== 1 ? 's' : ''}`;
+}
+const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+const REVEAL_EXTRA_MS = 600 ; 
+const setDisabled = (el, v) => { if (el) el.disabled = !!v; };
+
+  function afterActionSnapshot(d){
+    const dealer = d.dealer.full ? d.dealer : d.dealer;
+    renderHands({ dealer, player:d.players });
+
+    if (d.settled){
+      setDisabled(btnStart, false);
+      setDisabled(btnHit,   true);
+      setDisabled(btnStand, true);
+      setDisabled(btnDouble,true);
+      setDisabled(btnSplit, true);
+      announceAndRefresh(d);
+    } else {
+      setDisabled(btnHit,   false);
+      setDisabled(btnStand, false);
+    }
+  }
+    function setButtons({ deal, hit, stand }) {
+    const btnStart = document.getElementById('bjStart');
+    const btnHit   = document.getElementById('bjHit');
+    const btnStand = document.getElementById('bjStand');
+    if (btnStart && deal  !== undefined) btnStart.disabled = !deal;
+    if (btnHit   && hit   !== undefined) btnHit.disabled   = !hit;
+    if (btnStand && stand !== undefined) btnStand.disabled = !stand;
+  }
+function toast(html, { type = 'info', timeout = 2500 } = {}) {
+    let root = document.getElementById('toasts');
+    if (!root) {
+      root = document.createElement('div');
+      root.id = 'toasts';
+      document.body.appendChild(root);
+    }
+    const el = document.createElement('div');
+    el.className = `toast ${type}`;
+    el.setAttribute('role', 'status');
+    el.setAttribute('aria-live', 'polite');
+    el.innerHTML = `<span class="close" aria-label="Dismiss">×</span>${html}`;
+    root.appendChild(el);
+
+    // enter
+    requestAnimationFrame(() => el.classList.add('show'));
+
+    // auto-dismiss
+    const remove = () => {
+      el.classList.remove('show');
+      el.classList.add('hide');
+      el.addEventListener('transitionend', () => el.remove(), { once: true });
+    };
+    const t = setTimeout(remove, timeout);
+
+    // click to dismiss immediately
+    el.querySelector('.close').addEventListener('click', () => {
+      clearTimeout(t);
+      remove();
+    });
+
+    // light haptic on mobile (best-effort)
+    if (navigator.vibrate) { navigator.vibrate(20); }
+  }
+
+  function announceAndRefresh(d){
+  const creditUnits  = Math.floor((d.credit || 0) / 100);
+  const balanceUnits = Math.floor((d.sessionBalance || 0) / 100);
+
+  if (d.bonuses?.length) {
+    const lines = d.bonuses
+      .map(b => `• ${Math.floor((b.amount || 0) / 100)} KIBL — ${b.name}`)
+      .join('<br>');
+    toast(`<strong>Bonuses unlocked</strong><br>${lines}`, { type: 'bonus', timeout: 2500 });
+  }
+  if (creditUnits > 0) {
+    toast(`You won <strong>${creditUnits}</strong> KIBL!`, { type: 'win', timeout: 2500 });
+  }
+
+  payoutEl.textContent = `Total Payout: ${balanceUnits} KIBL`;
+  totalPayout = balanceUnits;
+  payoutBtn.disabled = (totalPayout === 0);
+
+  // Always refresh profile + leaderboard so numbers are current
+  loadProfile();
+  loadLeaderboard();
+}
+  async function loadProfile(){
+  try{
+    const r = await fetch(API.profile, { credentials:'include' });
+    const d = await r.json(); if (!d.ok) return;
+
+    const bankUnits = Math.floor((d.bank||0)/100);
+    totalPayout = bankUnits;
+    payoutEl.textContent = `Total Payout: ${bankUnits} KIBL`;
+    payoutBtn.disabled = (totalPayout === 0);
+      // NEW: show player tag
+  const tagEl = document.getElementById('userTag');
+  if (tagEl && d.displayId) tagEl.textContent = `Your tag: ${d.displayId}`;
+    const ach = d.stats?.blackjack?.achievements || {};
+    const list = Object.entries(ach).filter(([,v])=>v).map(([k])=>k.replace(/([A-Z])/g,' $1').trim());
+    const el = document.getElementById('bjAchievements');
+    if (el) el.textContent = list.length ? `Achievements: ${list.join(', ')}` : 'Achievements: —';
+  }catch{}
+}
+    
+    function cardEl(card, faceDown=false){
+      const div = document.createElement('div'); div.className='card';
+      const img = document.createElement('img');
+      img.src = faceDown ? 'cards/card-back.png' : `cards/${card.filename}`;
+      img.alt = faceDown ? 'Hidden card' : card.displayText;
+      div.appendChild(img);
+      return div;
+    }
+async function loadLeaderboard(){
+  try{
+    const res = await fetch('/api/leaderboard/window?game=blackjack&k=3', { credentials:'include' });
+    const d = await res.json(); if (!d.ok) return;
+
+    const list = document.getElementById('leaderboardList');
+    if (!list) return;
+    list.innerHTML = '';
+
+    d.window.forEach(row => {
+      const li = document.createElement('li');
+      li.innerHTML = `
+        <span class="who">${row.rank}. <span class="user">${row.user}${row.you ? ' (you)' : ''}</span></span>
+        <span class="pts">${row.points}</span>`;
+      if (row.you) li.classList.add('you');
+      list.appendChild(li);
+    });
+
+    let hint = document.getElementById('lbHint');
+    if (!hint) {
+      hint = document.createElement('div');
+      hint.id = 'lbHint';
+      hint.className = 'readout';
+      list.parentNode.appendChild(hint);
+    }
+    hint.textContent = (d.you && d.you.deltaAhead != null)
+      ? `Only ${d.you.deltaAhead} pts to the next rank.`
+      : '';
+  } catch(e){ console.warn('blackjack window LB failed', e); }
+}
+ function renderHands({ dealer, player }){
+      // dealer
+      bjDealer.innerHTML = '';
+      if (dealer.full){
+        dealer.full.forEach(c => bjDealer.appendChild(cardEl(c, false)));
+      } else {
+        bjDealer.appendChild(cardEl(dealer.up, false));
+        bjDealer.appendChild(cardEl(dealer.holeHidden ? dealer.up : dealer.up, dealer.holeHidden));
+      }
+      // player(s)
+      bjPlayer.innerHTML = '';
+      player.forEach((h,i)=>{
+        const handWrap = document.createElement('div'); handWrap.style.display='flex'; handWrap.style.gap='10px';
+        h.cards.forEach(c => handWrap.appendChild(cardEl(c, false)));
+        bjPlayer.appendChild(handWrap);
+      });
+    }
+
+    async function startRound(){
+      try{
+        const r = await postWithCsrf(API.bj.start, { method:'POST' });
+        const d = await r.json();
+        if (!r.ok || !d.ok) { alert(d.error||'Start failed'); return; }
+        if (d.fair?.commit && d.fair?.handId){
+          bjFair.textContent = `Commit: ${d.fair.commit.slice(0,10)}… (hand ${d.fair.handId.slice(0,8)})`;
+        }
+        renderHands({ dealer:d.dealer, player:[{ cards:d.player }] });
+        btnStart.disabled = true;
+        btnHit.disabled = btnStand.disabled = false;
+        bjMsg.textContent = 'Your move.';
+      }catch(e){ alert('Start failed.'); }
+    }
+  
+    async function hit(){ 
+      const r = await postWithCsrf(API.bj.hit, { method:'POST' });
+      const d = await r.json(); if (!r.ok || !d.ok){ alert(d.error||'Hit failed'); return; }
+      afterActionSnapshot(d);
+      if (d.settled) bjMsg.textContent='Round settled. Press Feed the dealer for a new round.';
+    }
+    async function stand() {
+    try {
+      setButtons({ hit:false, stand:false });
+
+      const r = await postWithCsrf(API.bj.stand, { method: 'POST' });
+      const d = await r.json();
+      if (!r.ok || !d.ok) throw new Error(d.error || 'Stand failed');
+
+      // use the server snapshot only
+      afterActionSnapshot(d);
+
+      if (d.fair?.serverSeed) {
+        bjFair.textContent =
+          `Reveal: seed=${d.fair.serverSeed.slice(0,12)}… • verify: /api/fair/${d.fair.handId}`;
+      }
+
+      await sleep(600);
+    } catch (err) {
+      toast(`Stand failed: ${err.message}`, { type: 'error' });
+      setButtons({ deal:true, hit:false, stand:false });
+    }
+  }
+    async function doubleDown(){
+      const r = await postWithCsrf(API.bj.double, { method:'POST' });
+      const d = await r.json(); if (!r.ok || !d.ok){ alert(d.error||'Double failed'); return; }
+      afterActionSnapshot(d);
+    }
+    async function split(){
+      const r = await postWithCsrf(API.bj.split, { method:'POST' });
+      const d = await r.json(); if (!r.ok || !d.ok){ alert(d.error||'Split failed'); return; }
+      afterActionSnapshot(d);
+    }
+
+    // ——— Daily & Payout (copied minimal from poker page) ———
+    async function onDaily(){
+      const res = await postWithCsrf(API.daily, { method:'POST' });
+      const data = await res.json();
+      if (!res.ok || !data.ok){
+        const mins = data.retryInMs ? Math.ceil(data.retryInMs/60000) : 'later';
+        alert('Daily already claimed. Try again in ~'+mins+' minutes.');
+        return;
+      }
+      const creditUnits = Math.floor((data.credit||0)/100);
+      const balanceUnits = Math.floor((data.sessionBalance||0)/100);
+      alert(`Daily reward claimed: +${creditUnits} KIBL`);
+      payoutEl.textContent = `Total Payout: ${balanceUnits} KIBL`;
+      totalPayout = balanceUnits; payoutBtn.disabled = (totalPayout===0);
+    }
+    async function onPayout(){
+      if (totalPayout===0){ alert('No payout to claim!'); return; }
+      const addr = addressInput.value.trim();
+      if (!/^nexa:/.test(addr)){ alert('Please enter a valid Nexa address (nexa:...)'); return; }
+      try{
+        loading.style.display='block'; payoutBtn.disabled=true;
+        const resp = await postWithCsrf(API.payout, { method:'POST',
+          headers:{ 'Content-Type':'application/json' },
+          body: JSON.stringify({ playerAddress: addr, 'h-captcha-response': (window.hcaptcha?.getResponse?.()||'') })
+        });
+        const data = await resp.json().catch(()=> ({}));
+        if (!resp.ok || data.error){ alert('Payout failed: '+(data.error||resp.statusText)); return; }
+        alert(`Payout successful! Tx ID: ${data.txId}`);
+        totalPayout = data.remainingKIBL ?? 0;
+        payoutEl.textContent = `Total Payout: ${totalPayout} KIBL`;
+        payoutBtn.disabled = (totalPayout===0);
+      } finally { loading.style.display='none'; }
+    }
+
+    // Wire up
+    btnStart.addEventListener('click', startRound);
+    btnHit.addEventListener('click',   hit);
+    btnStand.addEventListener('click', stand);
+    dailyBtn.addEventListener('click', onDaily);
+    payoutBtn.addEventListener('click', onPayout);
+
+    // bootstrap
+    (async ()=>{
+      try{ await fetchCsrf(); await loadProfile(); await loadLeaderboard(); }
+      catch{ alert('Could not initialize security token. Refresh to try again.'); }
+    })();
+    // Dismissible "How to play" with memory
+(function(){
+  const KEY = 'kk_bj_help_hidden';
+  const el  = document.getElementById('bjHow');
+  if (!el) return;
+  if (localStorage.getItem(KEY) === '1') el.hidden = true;
+  el.querySelector('.close')?.addEventListener('click', () => {
+    el.hidden = true; localStorage.setItem(KEY, '1');
+  });
+})();
+// One-time, shared with poker: 'kk_age_ok' === '1' skips gate on both pages
+(function(){
+  const KEY = 'kk_age_ok';
+  const gate = document.getElementById('ageGate');
+  if (!gate) return;
+
+  if (localStorage.getItem(KEY) === '1') { gate.hidden = true; return; }
+
+  gate.hidden = false;
+  const yes = document.getElementById('ageYes');
+  const no  = document.getElementById('ageNo');
+
+  // Prevent background scroll and set initial focus
+  const prevOverflow = document.body.style.overflow;
+  document.body.style.overflow = 'hidden';
+  yes?.focus();
+
+  const enter = () => {
+    localStorage.setItem(KEY, '1');
+    gate.hidden = true;
+    document.body.style.overflow = prevOverflow || '';
+  };
+
+  yes?.addEventListener('click', enter);
+
+  // Simple focus trap
+  const focusables = gate.querySelectorAll('button, [href], [tabindex]:not([tabindex="-1"])');
+  gate.addEventListener('keydown', (e)=>{
+    if (e.key !== 'Tab' || focusables.length === 0) return;
+    const first = focusables[0], last = focusables[focusables.length - 1];
+    if (e.shiftKey && document.activeElement === first){ last.focus(); e.preventDefault(); }
+    else if (!e.shiftKey && document.activeElement === last){ first.focus(); e.preventDefault(); }
+  });
+})();
+
+
+  </script>
+
+  <footer class="readout" style="text-align:center; opacity:.9; padding:14px 0 6px;">
+    © 2025 KIBL / PixelPup • Stay shiny 🐶✨ •
+    <a href="tos.html">Terms</a> • <a href="privacy.html">Privacy</a> • <a href="disclaimer.html">Disclaimer</a>
+  </footer>
+</body>
+</html>

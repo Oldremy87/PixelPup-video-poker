@@ -111,49 +111,94 @@
   <div class="wrap">
   <div class="panel">
     <div class="hero">
-      <!-- “Puppy with glasses” inline SVG -->
-      <svg width="56" height="56" viewBox="0 0 56 56" aria-hidden="true">
-        <rect x="4" y="6" width="48" height="44" rx="8" fill="#0f1425" stroke="#3af5d9" stroke-width="2"/>
-        <circle cx="18" cy="26" r="8" fill="#ffcc00"/><circle cx="38" cy="26" r="8" fill="#ffcc00"/>
-        <rect x="12" y="24" width="12" height="4" rx="2" fill="#0b0f19"/><rect x="32" y="24" width="12" height="4" rx="2" fill="#0b0f19"/>
-        <rect x="24" y="25" width="8" height="2" fill="#3af5d9"/><!-- bridge -->
-        <rect x="22" y="38" width="12" height="4" rx="2" fill="#ff3df7"/><!-- collar -->
-      </svg>
+      
       <h1>KennelKlub • PixelPup — Whitepaper V0</h1>
     </div>
+      <section class="panel wrap" style="margin-top:12px">
+  <strong>Mid-Alpha Update (Sept 2025):</strong>
+  Poker polished; <strong>Blackjack (Alpha)</strong> released; Achievements & Points live; commit + hand ID visible.
+</section>
+  
+    <span class="tag">Website Litepaper · Friendly overview</span>
+    <h1>KennelKlub Arcade — Fair-Play Gaming on Nexa</h1>
+    <div class="kicker">Provably fair · Seasonal competitions · Deflationary $KIBL · PixelPup culture</div>
 
-    <h2>What this is</h2>
-    <p class="readout">A short, practical description of the PixelPup Poker Alpha. Solo-dev project focused on fair play, security, and community fun. No gambling, no real money. Tokens only. 18+.</p>
+    <div class="hero">
+      <p><strong>Why we exist.</strong> Casinos are opaque, P2E inflated, and newcomers fear scams & wallet complexity.
+      KennelKlub is a <em>fair-play blockchain arcade</em> on Nexa. Every hand is provable (commit-reveal), every season brings
+      new games and rewards, and every wager strengthens a deflationary $KIBL economy.</p>
+    </div>
 
-    <h2>Game loop</h2>
-    <p class="readout">Deal → hold → draw. Payouts are redeemable in KIBL amounts via faucet mechanics. Leaderboard and daily reward encourage play. No paid advantages.</p>
+    <div class="grid">
+      <div class="card">
+        <h2>Fairness-First UX</h2>
+        <p>Commit–reveal with a visible hand/round ID in the UI. Outcomes are independently verifiable without needing to be “technical.”</p>
+        <ul class="list">
+          <li>Server seed committed ahead of play</li>
+          <li>Seed reveal + verification after the round</li>
+          <li>Public docs for anyone who wants to check</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h2>Seasonal Arcade Loop</h2>
+        <p>Poker → Blackjack → Dice → Roulette → Slots → RPG prototype. Leaderboards, achievements and NFT perks keep the loop fresh.</p>
+        <ul class="list">
+          <li>Season 0 focus: polished Poker/Blackjack</li>
+          <li>Alpha Tester NFT perks and cosmetic drops</li>
+          <li>Community events and meme culture</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h2>Deflationary $KIBL</h2>
+        <p>Target model: <strong>50% of wagers burned</strong>, <strong>50% to treasury</strong> for development, audits, rewards, and liquidity.
+        KIBL began with a fair grassroots distribution (~5% faucet; 680+ holders) and a fixed 999,000,000 cap with 1,000,000 provably burned.</p>
+      </div>
+    </div>
 
-    <h2>Fairness</h2>
-    <p class="readout">Each hand commits to a server seed (hash shown in UI). Next iteration reveals the seed and offers a verify page to reproduce shuffles deterministically.</p>
+    <div class="hr"></div>
 
-    <h2>Security & privacy</h2>
-    <ul class="readout">
-      <li>hCaptcha + CSRF, rate limits on payouts/daily.</li>
-      <li>Minimal data; session cookies only; no third-party trackers.</li>
-      <li>Headers: HSTS, CSP, referrer policy (tightened over time).</li>
+    <div class="two-col">
+      <div>
+        <h2>What makes KennelKlub different?</h2>
+        <ul class="list">
+          <li><strong>Transparency by default:</strong> verifiable randomness, published addresses, visible burns.</li>
+          <li><strong>Crypto-only:</strong> no fiat rails; Nexa throughput and low fees enable micro-bets & fast UX.</li>
+          <li><strong>Compliance-minded:</strong> Wyoming LLC foundation; offshore licensing path explored as traction grows.</li>
+          <li><strong>Culture:</strong> approachable PixelPup identity that reduces wallet anxiety for newcomers.</li>
+        </ul>
+        <p class="small muted">Note: Betting features and specific token sinks will roll out in phases subject to legal review and geographic restrictions.</p>
+      </div>
+      <div>
+        <h2>$KIBL Utility</h2>
+        <ul class="list">
+          <li>Access currency for Arcade games</li>
+          <li>Burn mechanism tied to wagers</li>
+          <li>Treasury funding for development & audits</li>
+          <li>NFT perks & seasonal progression</li>
+        </ul>
+        <a class="pill" href="#">Stay Shiny — PixelPup Approved</a>
+      </div>
+    </div>
+
+    <div class="hr"></div>
+
+    <h2>Roadmap Snapshot (Seasons)</h2>
+    <ul class="list">
+      <li><strong>Season 0 (2025):</strong> Poker & Blackjack polished; Wyoming LLC; Dapp wallet integration.</li>
+      <li><strong>Season 1 (2026):</strong> Dice & Roulette; private sale with hard cap + per-wallet max; community leaderboards.</li>
+      <li><strong>Season 2 (2026):</strong> KIBL betting (crypto-only); NFT rewards; treasury growth; first security audit report.</li>
+      <li><strong>Season 3 (2026–27):</strong> Multiplayer Poker beta; Slots; ecosystem partnerships.</li>
+      <li><strong>Season 4 (2027):</strong> DAO treasury governance preparation; RPG prototype; full Arcade launch.</li>
     </ul>
 
-    <h2>Compliance notes</h2>
-    <ul class="readout">
-      <li>Not gambling; no real money; collectibles are cosmetic art only.</li>
-      <li>No expectation of profit; no staking/yield language.</li>
-      <li>Age 18+ gate and clear disclosures across pages.</li>
-    </ul>
+    <div class="cta">
+      <a class="btn" href="KIBL_Litepaper_V0_Condensed_v5.pdf">Download full investor litepaper (PDF)</a>
+      <a class="btn secondary" href="roadmap.html">Open detailed roadmap</a>
+    </div>
 
-    <h2>Token & NFTs</h2>
-    <p class="readout">KIBL is used for payouts in the Alpha; amounts have no monetary value. Optional NFTs (Face Set 1/1s; Alpha Tester Collar) are cosmetic collectibles only.</p>
-
-    <h2>Roadmap (lite)</h2>
-    <ul class="readout">
-      <li>Provably-fair v0: seed commit,seed reveal + verify page.</li>
-      <li>Ops: 2 alerts; tiny analytics (views + deal clicks).</li>
-      <li>Season 1 (free): dates visible; Leadorboard NFT.</li>
-    </ul>
+    <p class="small muted">This website litepaper is a high-level overview for community information only and is not investment advice.
+    Token mechanics, timelines, and features are subject to change based on audits, compliance reviews, and technical feasibility.</p>
+  </div>
 
     <p class="readout"><em>Disclaimer:</em> This is an Alpha. Features may change. Nothing here is investment advice or an offer of securities.</p>
   </div>

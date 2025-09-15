@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>Leaderboard</title>
+  <style>
+    :root{
+      --bg:#0b0f19; --panel:#111827; --text:#00ffc6; --dim:#7fffe6; --accent:#ffcc00;
+    }
+    body{ margin:0; font:14px/1.4 system-ui,-apple-system,Segoe UI,Roboto,Arial; background:#0b0f19; color:var(--text); padding:16px;}
+    .wrap{ max-width:900px; margin:0 auto;}
+    .panel{
+      background: linear-gradient(180deg, rgba(255,255,255,.04), rgba(255,255,255,.01));
+      border:1px solid rgba(58,245,217,.3); border-radius:16px; padding:16px; margin:12px 0;
+    }
+    h1,h2{ margin:0 0 10px; }
+    .tabs{ display:flex; gap:8px; margin-bottom:12px; flex-wrap:wrap;}
+    .btn{ appearance:none; border:0; border-radius:10px; padding:8px 12px; font-weight:700; cursor:pointer;
+      background:var(--accent); color:#000; text-decoration:none; display:inline-block;}
+    .btn.ghost{ background:transparent; color:var(--text); border:1px solid rgba(58,245,217,.35);}
+    .leaderboard{ list-style:none; padding:0; margin:0;}
+    .leaderboard li{ display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid rgba(255,255,255,.06);}
+    .leaderboard li:last-child{ border-bottom:0;}
+    .leaderboard .user{ opacity:.9;}
+    .leaderboard .pts{ font-weight:700;}
+    .hint{ color:var(--dim); margin-top:6px; font-size:12px;}
+    .bar{ display:flex; gap:8px; align-items:baseline; justify-content:space-between; flex-wrap:wrap; }
+    .you{ font-weight:700; }
+    .lb{ list-style:none; padding:0; margin:0; }
+.lb li{ display:flex; align-items:center; gap:.75rem; padding:.25rem 0; }
+.lb .who{ min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.lb .pts{ margin-left:auto; }
+.lb li.you{ font-weight:700; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="panel">
+      <div class="bar">
+        <h1 id="title">Leaderboard</h1>
+        <div class="tabs">
+            <a class="btn btn-primary" href="/play.html" aria-current="page"> Play Poker</a>
+            <a class = "btn btn-primary" href="blackjack.html">Play BlackJack</a>
+          <a class="btn ghost" href="?game=poker">Poker</a>
+          <a class="btn ghost" href="?game=blackjack">Blackjack</a>
+        </div>
+      </div>
+      <div class="hint">This page shows the Top 25 and a personal window around your current rank.</div>
+    </div>
+
+    <div class="panel">
+      <h2>Top 25</h2>
+      <ol id="lbTopList" class="leaderboard"></ol>
+    </div>
+
+    <div class="panel">
+      <h2>Your Rank (±3)</h2>
+      <div id="youLine" class="hint"></div>
+      <ol id="lbWindowList" class="leaderboard"></ol>
+      <div id="youHint" class="hint"></div>
+    </div>
+  </div>
+
+  <script>
+   function getGame(){
+  const p = new URLSearchParams(location.search);
+  const g = (p.get('game')||'poker').toLowerCase();
+  return (g==='blackjack')?'blackjack':'poker';
+}
+
+async function loadTop(game){
+  const list = document.getElementById('lbTopList');
+  list.innerHTML = '';
+  const r = await fetch(`/api/leaderboard/top?game=${game}&limit=25`, { credentials:'include' });
+  const d = await r.json(); if (!d.ok) return { entries:[], youInTop:false };
+  d.entries.forEach((e) => {
+    const li = document.createElement('li');
+    li.dataset.rank = e.rank;
+    li.innerHTML = `<span class="who">${e.rank}. <span class="user">${e.user}</span></span><span class="pts">${e.points}</span>`;
+    list.appendChild(li);
+  });
+  return d;
+}
+
+async function loadWindow(game){
+  const list = document.getElementById('lbWindowList');
+  const youLine = document.getElementById('youLine');
+  const youHint = document.getElementById('youHint');
+  list.innerHTML = ''; youLine.textContent = ''; youHint.textContent = '';
+
+  const r = await fetch(`/api/leaderboard/window?game=${game}&k=3`, { credentials:'include' });
+  const d = await r.json(); if (!d.ok) return null;
+
+  d.window.forEach((row) => {
+    const li = document.createElement('li');
+    li.innerHTML = `<span class="who">${row.rank}. <span class="user">${row.user}</span></span><span class="pts">${row.points}</span>`;
+    if (row.you) li.classList.add('you');
+    list.appendChild(li);
+  });
+
+  if (d.you){
+    youLine.textContent = `You are #${d.you.rank} with ${d.you.points} pts`;
+    youHint.textContent = (d.you.deltaAhead != null) ? `Only ${d.you.deltaAhead} pts to the next rank.` : '';
+  }
+  return d;
+}
+
+function highlightYouInTop(topData, winData){
+  if (!topData || !winData || !winData.you) return;
+  const youRank = winData.you.rank;
+  const li = document.querySelector(`#lbTopList li[data-rank="${youRank}"]`);
+  if (li) li.classList.add('you');
+}
+
+(async function init(){
+  const game = getGame();
+  document.getElementById('title').textContent = (game==='blackjack'?'Blackjack':'Poker') + ' Leaderboard';
+  try{
+    const [topData, winData] = await Promise.all([loadTop(game), loadWindow(game)]);
+    highlightYouInTop(topData, winData);
+  }catch(e){ console.warn('leaderboard page load failed', e); }
+})();
+  </script>
+</body>
+</html>

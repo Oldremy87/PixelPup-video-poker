@@ -46,7 +46,36 @@
       color: var(--text);
       padding: 24px;
     }
+  #toasts {
+    position: fixed; top: 12px; right: 12px; z-index: 9999;
+    display: flex; flex-direction: column; gap: 8px;
+    pointer-events: none;
+  }
+  .toast {
+    pointer-events: auto;
+    background: rgba(20,20,20,.92);
+    color: #fff; border-radius: 12px; padding: 10px 12px;
+    box-shadow: 0 8px 24px rgba(0,0,0,.25);
+    font: 600 14px system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+    transform: translateY(-6px); opacity: 0;
+    transition: transform .18s ease-out, opacity .18s ease-out;
+    max-width: 320px; line-height: 1.25;
+    border-left: 4px solid #888;
+  }
+  .toast.show { transform: translateY(0); opacity: 1; }
+  .toast.hide { transform: translateX(8px); opacity: 0; }
+  .toast.win   { border-left-color: #22c55e; }  /* green */
+  .toast.bonus { border-left-color: #06b6d4; }  /* cyan  */
+  .toast.error { border-left-color: #ef4444; }  /* red   */
 
+  .toast .close {
+    float: right; margin-left: 8px; font-weight: 700; cursor: pointer; opacity: .7;
+  }
+  .toast .close:hover { opacity: 1; }
+
+  @media (prefers-reduced-motion: reduce) {
+    .toast, .toast.show, .toast.hide { transition: none; }
+  }
     /* Header / Nav */
     header { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin: 0 auto 16px; max-width: 1100px; }
     .brand { display: flex; align-items: center; gap: 10px; letter-spacing: 0.5px; text-shadow: 0 0 10px rgba(0,255,198,0.6); }
@@ -224,6 +253,22 @@
   .card button { min-height: 28px; font-size: 10px; }
   .card-hand { min-height: 140px; }
 }
+.callout{
+  margin: 8px 0 12px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: linear-gradient(180deg, rgba(255,255,255,0.06), rgba(255,255,255,0.02));
+  border: 1px solid rgba(58,245,217,0.45);
+  box-shadow: 0 0 18px rgba(0,255,198,0.12) inset, 0 8px 22px rgba(0,0,0,0.25);
+  font-size: 13px; line-height: 1.25;
+}
+.callout strong{ color: var(--accent); margin-right: 6px; }
+.callout .close{
+  float: right; border: 0; background: transparent; color: var(--text);
+  font-weight: 800; cursor: pointer; opacity: .8;
+}
+.callout .close:hover{ opacity: 1; }
+
 /* Age gate: focus ring for accessibility */
 #ageGate :focus-visible { outline: 2px solid var(--accent-3); outline-offset: 2px; }
 
@@ -266,11 +311,11 @@
 }
 /* Keep claim pieces tidy */
 .claim-block { margin-top: 12px; }
-.leaderboard { margin: 8px 0 0; padding-left: 20px; }
-.leaderboard li { display: flex; justify-content: space-between; padding: 4px 0; }
-.leaderboard .user { opacity: 0.8; }
-.leaderboard .pts { font-weight: 700; }
-/* HUD: desktop = 2 cols, mobile = stacked */
+#leaderboardList{ list-style:none; padding:0; margin:0; }
+#leaderboardList li{ display:flex; align-items:center; gap:.75rem; padding:.25rem 0; }
+#leaderboardList .who{ min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+#leaderboardList .pts{ margin-left:auto; }
+#leaderboardList li.you{ font-weight:700; }
 .hud {
   display: grid;
   grid-template-columns: 2fr 1fr;
@@ -283,6 +328,7 @@
   .hud { grid-template-columns: 1fr; }
   .panel-table, .panel-claim { grid-column: 1 / -1; }  /* <— ensures stacking */
 }
+.hidden { display: none !important; }
 
 
     </style>
@@ -447,8 +493,9 @@
     @NexaKennelKlub
   </a>
       <a class="btn btn-ghost" href="/"              class="kk-home" aria-label="Go to Home">🏠 Home</a>
+     <a class = "btn btn-primary" href="blackjack.html">Play BlackJack</a>
      
-      
+
 
 
   
@@ -465,8 +512,15 @@
       <div class="panel panel-table" id="game">
     <h1>Table</h1>
     <div class="controls">
+      <div id="vpHow" class="callout" role="region" aria-label="How to play video poker">
+  <strong>How to play:</strong>
+  Deal → tap cards to <em>HOLD</em> → Draw once. Get the best 5 card hand you can. Payouts: RF 250, SF 50, 4K 25, FH 9, Flush 6, Straight 4, 3K 3, 2 Pair 2, Jacks+ 1.
+  <a href="pointstable.html" class="btn btn-ghost" style="margin-left:8px;">Full payouts</a>
+  <button class="close" aria-label="Hide tips">×</button>
+</div>
+
+      <p id="userTag" class="readout"></p>
       <p id="fairInfo" class="readout"></p>
-      
       <button id="deal" class="btn btn-primary" disabled>Feed the dealer</button>
       <button id="draw" class="btn" disabled>Draw</button>
     </div>
@@ -474,6 +528,7 @@
     <p class="readout">Tap a card to keep it for the draw.</p>
     <a class="btn btn-ghost" href="achievements.html">Achievements</a>
      <a class="btn btn-ghost" href="pointstable.html">Point Table</Table></a>
+     
   </div>
 
   <!-- RIGHT SIDEBAR: TOTAL + CLAIM + DAILY -->
@@ -482,8 +537,11 @@
       <button id="dailyReward" class="btn btn-ghost">Claim Daily Reward</button>
       <p id="payoutTotal">Total Payout: 0 KIBL</p>
       <div class="panel" id="leaderboardPanel">
-  <h2>Season Top 20 (Skill Points)</h2>
+  <h2>Season Points Window (Skill Points)</h2>
   <ol id="leaderboardList" class="leaderboard"></ol>
+  <div class="readout" style="margin-top:6px;">
+   <a class="btn btn-ghost" href="/leaderboard.html?game=poker">See full leaderboard →</a>
+</div>
 </div>
 
     </div>
@@ -524,6 +582,7 @@
     </div>
 
   <audio id="feedSound" src="dogfood.mp3" preload="auto"></audio>
+  
 <script>
 
 document.addEventListener('DOMContentLoaded', async () => {
@@ -536,6 +595,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     alert('Could not initialize security token. Refresh to try again.');
   }
 });
+
   // ---- constants so we don't typo ids/paths ----
 const IDS = Object.freeze({
   payout: 'payoutTotal',
@@ -549,13 +609,6 @@ const IDS = Object.freeze({
   loading: 'loading',
   leaderboardList: 'leaderboardList'
 });
-let __csrf = null;
-  async function fetchCsrf() {
-    const r = await fetch('/api/csrf', { credentials: 'include' });
-    if (!r.ok) throw new Error('CSRF bootstrap failed');
-    const { csrfToken } = await r.json();
-    __csrf = csrfToken;
-  }
 
 const API = Object.freeze({
   csrf: '/api/csrf',
@@ -579,6 +632,15 @@ const payoutEl       = document.getElementById(IDS.payout);
 const achievementsEl = document.getElementById(IDS.achievements);
 const handContainer  = document.getElementById(IDS.hand);
 const feedSound = document.getElementById('feedSound');
+
+    let __csrf = null;
+    async function fetchCsrf(){
+      const r = await fetch('/api/csrf', { credentials:'include' });
+      if (!r.ok) throw new Error('CSRF bootstrap failed');
+      const { csrfToken } = await r.json();
+      __csrf = csrfToken;
+    }
+
 function postWithCsrf(input, init = {}) {
   const baseHeaders = init.headers ? {...init.headers} : {};
   if (init.body && !baseHeaders['Content-Type']) baseHeaders['Content-Type'] = 'application/json';
@@ -611,6 +673,44 @@ function postWithCsrf(input, init = {}) {
   function hide(el){ el && (el.style.display = 'none'); }
   const wait = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
+  function toast(html, { type = 'info', timeout = 2500 } = {}) {
+    let root = document.getElementById('toasts');
+    if (!root) {
+      root = document.createElement('div');
+      root.id = 'toasts';
+      document.body.appendChild(root);
+    }
+    const el = document.createElement('div');
+    el.className = `toast ${type}`;
+    el.setAttribute('role', 'status');
+    el.setAttribute('aria-live', 'polite');
+    el.innerHTML = `<span class="close" aria-label="Dismiss">×</span>${html}`;
+    root.appendChild(el);
+
+    // enter
+    requestAnimationFrame(() => el.classList.add('show'));
+
+    // auto-dismiss
+    const remove = () => {
+      el.classList.remove('show');
+      el.classList.add('hide');
+      el.addEventListener('transitionend', () => el.remove(), { once: true });
+    };
+    const t = setTimeout(remove, timeout);
+
+    // click to dismiss immediately
+    el.querySelector('.close').addEventListener('click', () => {
+      clearTimeout(t);
+      remove();
+    });
+
+    // light haptic on mobile (best-effort)
+    if (navigator.vibrate) { navigator.vibrate(20); }
+  }
+
+
+  
+  
   function clearSimulatedDeal() {
     [...handContainer.querySelectorAll('.placeholder')].forEach(ph => ph.remove());
   }
@@ -700,6 +800,28 @@ function waitForWidget() {
     check();
   });
 }
+function announceAndRefresh(d){
+  const creditUnits  = Math.floor((d.credit || 0) / 100);
+  const balanceUnits = Math.floor((d.sessionBalance || 0) / 100);
+
+  if (d.bonuses?.length) {
+    const lines = d.bonuses
+      .map(b => `• ${Math.floor((b.amount || 0) / 100)} KIBL — ${b.name}`)
+      .join('<br>');
+    toast(`<strong>Bonuses unlocked</strong><br>${lines}`, { type: 'bonus', timeout: 1500 });
+  }
+  if (creditUnits > 0) {
+    toast(`You won <strong>${creditUnits}</strong> KIBL!`, { type: 'win', timeout: 1500 });
+  }
+
+  payoutEl.textContent = `Total Payout: ${balanceUnits} KIBL`;
+  totalPayout = balanceUnits;
+  payoutBtn.disabled = (totalPayout === 0);
+
+  // Always refresh profile + leaderboard so numbers are current
+  loadProfile();
+  loadLeaderboard();
+}
 
 async function getCaptchaToken() {
   await waitForWidget();
@@ -718,35 +840,54 @@ async function loadProfile(){
     const r = await fetch(API.profile, { credentials: 'include' });
     const d = await r.json();
     if (!d.ok) return;
-   const bankUnits = Math.floor((d.bank || 0) / 100);
-    totalPayout = bankUnits;                                 // <-- keep the variable in sync
+
+    const bankUnits = Math.floor((d.bank || 0) / 100);
+    totalPayout = bankUnits;
     if (payoutEl) payoutEl.textContent = `Total Payout: ${bankUnits} KIBL`;
-  if (payoutBtn) payoutBtn.disabled = (totalPayout === 0); // <-- button state reflects balance
-    const ach = Object.entries(d.achievements).filter(([_,v])=>v).map(([k])=>k).join(', ');
-    if (achievementsEl) achievementsEl.textContent = ach ? `Achievements: ${ach}` : 'Achievements: —';
-  }catch{}
+    if (payoutBtn) payoutBtn.disabled = (totalPayout === 0);
+    // NEW: show player tag
+  const tagEl = document.getElementById('userTag');
+  if (tagEl && d.displayId) tagEl.textContent = `Your tag: ${d.displayId}`;
+
+    // show ONLY Poker achievements on the poker page
+    const ach = d.stats?.poker?.achievements || {};
+    const list = Object.entries(ach).filter(([,v]) => v).map(([k]) => k.replace(/([A-Z])/g, ' $1').trim());
+    if (achievementsEl) {
+  achievementsEl.textContent = list.length
+    ? `Achievements: ${list.join(', ')}`
+    : 'Achievements: —';
+    }
+  } catch {}
 }
 async function loadLeaderboard(){
   try{
-    const r = await fetch(API.leaderboard, { credentials:'include' });
-    const d = await r.json(); if (!d.ok) return;
-    const list = document.getElementById('leaderboardList'); if (!list) return;
+    const res = await fetch('/api/leaderboard/window?game=poker&k=3', { credentials:'include' });
+    const d = await res.json(); if (!d.ok) return;
+
+    const list = document.getElementById('leaderboardList');
+    if (!list) return;
     list.innerHTML = '';
-    d.entries.forEach(e=>{
+
+    d.window.forEach(row => {
       const li = document.createElement('li');
-      const left = document.createElement('span');
-      left.textContent = `${e.rank}. `;
-      const user = document.createElement('span');
-      user.className = 'user';
-      user.textContent = e.user;      // safe
-      left.appendChild(user);
-      const right = document.createElement('span');
-      right.className = 'pts';
-      right.textContent = String(e.points);
-      li.append(left, right);
+      li.innerHTML = `
+        <span class="who">${row.rank}. <span class="user">${row.user}${row.you ? ' (you)' : ''}</span></span>
+        <span class="pts">${row.points}</span>`;
+      if (row.you) li.classList.add('you');
       list.appendChild(li);
     });
-  }catch{}
+
+    let hint = document.getElementById('lbHint');
+    if (!hint) {
+      hint = document.createElement('div');
+      hint.id = 'lbHint';
+      hint.className = 'readout';
+      list.parentNode.appendChild(hint);
+    }
+    hint.textContent = (d.you && d.you.deltaAhead != null)
+      ? `Only ${d.you.deltaAhead} pts to the next rank.`
+      : '';
+  } catch(e){ console.warn('poker window LB failed', e); }
 }
 
  function formatWait(ms) {
@@ -755,7 +896,7 @@ async function loadLeaderboard(){
   return `${m} minute${m !== 1 ? 's' : ''}`;
 }
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
-const REVEAL_EXTRA_MS = 500 ; 
+const REVEAL_EXTRA_MS = 600 ; 
 async function startGame() {
   // 1) Start-hand gate FIRST
   let start;
@@ -898,11 +1039,15 @@ async function draw() {
     await nextPaint();
     await waitForImagesDecoded(handContainer);
     await sleep(REVEAL_EXTRA_MS);
-     if (data.bonuses?.length) {
-      alert('Bonuses unlocked:\n' + data.bonuses.map(b => `• ${Math.floor((b.amount||0)/100)} KIBL — ${b.name}`).join('\n'));
-    }
+    if (data.bonuses?.length) {
+      const lines = data.bonuses
+    .map(b => `• ${Math.floor((b.amount || 0) / 100)} KIBL — ${b.name}`)
+    .join('<br>');
+      toast(`<strong>Bonuses unlocked</strong><br>${lines}`, { type: 'bonus', timeout: 1200 });
+      }
+
     if (creditUnits > 0) {
-      alert(`You won ${creditUnits} KIBL this hand!`);
+      toast(`You won <strong>${creditUnits}</strong> KIBL!`, { type: 'win', timeout: 1200 });
     }
     // Fetch profile/leaderboard AFTER the user sees cards + alerts
     // (non-blocking for snappier UX)
@@ -1077,6 +1222,15 @@ async function onClaimPayout() {
     const remember = !!rememberCb?.checked;
     (remember ? localStorage : sessionStorage).setItem(LS_KEY, 'true');
     hideGate();
+  });
+})();
+(function(){
+  const KEY = 'kk_vp_help_hidden';
+  const el  = document.getElementById('vpHow');
+  if (!el) return;
+  if (localStorage.getItem(KEY) === '1') el.hidden = true;
+  el.querySelector('.close')?.addEventListener('click', () => {
+    el.hidden = true; localStorage.setItem(KEY, '1');
   });
 })();
 </script>
