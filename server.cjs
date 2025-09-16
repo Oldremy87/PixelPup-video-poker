@@ -1618,8 +1618,8 @@ app.post('/api/bj/stand', bjActionLimiter, async (req, res) => {
 
     // Now the round is settled → compute tally once
     const tally = settleAndRewardBJ(req, r);
-    const natBjCount = r.players.filter(ph => ph.result === 'bj' && !ph.splitFrom).length;
-    const claim = await claimAndAwardBJ(req, r, tally.results, { ...tally, natBjCount });
+    // Try to claim+award exactly once
+    const claim = await claimAndAwardBJ(req, r, tally.results, tally);
 
     // If not awarded (already claimed elsewhere/race), just return snapshot without new credit
     if (!claim.awarded) {
