@@ -1425,7 +1425,7 @@ app.post('/api/bj/start', bjStartLimiter, async (req, res) => {
       handId, commit:commitHash, serverSeed, clientSeed, revealed:false,
       deck, deckPos:0,
       dealer: [], players: [{ cards:[], settled:false, result:null, doubled:false, splitFrom:false }],
-      activeIndex: 0, settled:false
+      activeIndex: 0, settled:false, rewarded: false
     };
     // deal P,D,P,D
     round.players[0].cards.push(drawCard(round));
@@ -1486,7 +1486,7 @@ app.post('/api/bj/stand', bjActionLimiter, async (req, res) => {
     // If it's already settled (e.g., natural BJ on the deal) we may still need to award.
     if (r.settled) {
       // If not rewarded yet, do ONE award pass now.
-      if (!r._rewarded) {
+      if (!r._rewarded) {r._rewarded = true;
         const { points, creditMinor, bonuses, results } = settleAndRewardBJ(req, r);
 
         // ---- Achievements (only the ones you want right now) ----
@@ -1507,6 +1507,38 @@ app.post('/api/bj/stand', bjActionLimiter, async (req, res) => {
         }
         
       
+        // Idempotency gate: only award once per handId
+let canAward = true;
+try {
+  const p = await db();
+  const { rowCount } = await p.query(
+    `UPDATE fair_rounds
+       SET awarded = true, awarded_at = now()
+     WHERE hand_id = $1 AND awarded IS NOT TRUE`,
+    [r.handId]
+  );
+  canAward = rowCount === 1;
+} catch { /* if DB hiccups, fall back to memory flag below */ }
+
+// Also flip the in-memory guard to stop repeat calls in same process
+if (r._rewarded) canAward = false;
+r._rewarded = true;
+
+if (!canAward) {
+  // Already awarded — just return a snapshot without any new credit/points.
+  return res.json({
+    ok: true,
+    settled: true,
+    dealer:  { up: r.dealer[0], hole: r.dealer[1], full: r.dealer },
+    players: snapshotPlayers(r),
+    results: [],           // nothing new
+    credit: 0,
+    sessionBalance: req.session.bank,
+    points: 0,
+    bonuses: [],
+    fair: r.revealed ? null : { handId: r.handId, commit: r.commit } // optional
+  });
+}
 
         // ---- Deposit to blackjack wallet (base + bonus) ----
         const roundMinor = Math.max(0, (creditMinor || 0) + (extraMinor || 0));
@@ -1539,7 +1571,13 @@ app.post('/api/bj/stand', bjActionLimiter, async (req, res) => {
             );
           } catch (e) { logger.error('bj blackjacks increment', { e: String(e) }); }
         }
-        
+        const ins = await p.query(
+  `INSERT INTO bj_awards(hand_id,user_id,points,credit_minor)
+   VALUES ($1,$2,$3,$4)
+   ON CONFLICT (hand_id) DO NOTHING`,
+  [r.handId, req.uid, points, creditMinor + extraMinor]
+);
+if (ins.rowCount !== 1) return /* already awarded — early return snapshot */;
         // Reveal fairness (best-effort)
         let fair = null;
         if (!r.revealed) {
