@@ -8,6 +8,7 @@
   <style>
       /* ===== Retro PixelPup theme (CSP-safe, no external fonts) ===== */
     :root{
+        --ui-scale: 1;        /* user slider 0.8–1.25 */
        --hand-gap: 10px;
         --card-ratio: 1.6;   /* height = width * ratio; tweak if your art needs */
       --cardW: 100px;    
@@ -22,6 +23,9 @@
       --card-border: #3af5d9;
       --danger: #ff5577;
       --ok: #45ff99;
+       --win-cyan:  #3af5d9;
+  --win-pink:  #ff3df7;
+  --win-gold:  #ffcc00;
     }
     /* Always hide elements with [hidden], and loaders by default */
 [hidden] { display: none !important; }
@@ -152,15 +156,12 @@
       margin: 12px auto 0;
       max-width: 1100px;
     }
-@keyframes pulse {
-  from { opacity: .75; transform: translateY(0); }
-  to   { opacity: 1;   transform: translateY(-1px); }
-}
     /* Card visual */
     /* Card + placeholder sizing and layout */
 .card, .placeholder {
-  width: var(--cardW);
-  height: calc(var(--cardW) * var(--card-ratio));          
+  --_w: calc(var(--cardBaseW, var(--cardW)) * var(--ui-scale));
+  width: var(--_w);
+  height: calc(var(--_w) * var(--card-ratio));         
   border-radius: 10px;
   background: var(--card-bg);
   color: #fff;
@@ -175,7 +176,9 @@
   text-align: center;
   box-shadow: 0 0 20px rgba(0,255,198,0.1);
 }
-
+body.compact {
+  --hand-gap: 8px;
+}
 /* Dealing placeholders centered and unbroken */
 .placeholder {
   display: flex;
@@ -206,7 +209,76 @@
   .brand h1 { font-size: 1.35rem; }
   body { padding: 12px; }
 }
+/* Lightweight confetti (optional flair) */
+.fx-confetti{ position:fixed; inset:0; pointer-events:none; z-index:9999; overflow:hidden; }
+.fx-confetti i{
+  position:absolute; top:-12px; left: var(--x,50%);
+  width:8px; height:14px; border-radius:2px;
+  background: linear-gradient(var(--rot,0deg),
+              var(--win-pink), var(--win-gold), var(--win-cyan));
+  opacity:.95;
+  transform: rotate(var(--rot,0deg));
+  animation: arcade-confetti var(--dur,1200ms) ease-out forwards;
+}
+@keyframes arcade-confetti{
+  0%   { transform: translateY(-10px) rotate(var(--rot,0deg)); }
+  100% { transform: translateY(calc(100vh + 12px)) rotate(calc(var(--rot,0deg) + 260deg)); opacity:0; }
+}
+#payoutTotal{ position: relative; display:inline-block; border-radius:12px; padding:2px 6px; }
 
+/* One-shot bling class we add/remove from JS */
+.payout-win{
+  /* quick pop + glow + sheen */
+  animation:
+    arcade-pop .18s ease-out,
+    arcade-glow 1.2s ease-out;
+  filter: saturate(1.2);
+}
+
+/* Neon aura behind the text */
+.payout-win::before{
+  content:"";
+  position:absolute; inset:-8px;
+  border-radius:14px;
+  background: conic-gradient(from 0deg,
+    var(--win-pink), var(--win-gold), var(--win-cyan), var(--win-pink));
+  filter: blur(14px) opacity(.55);
+  z-index:-1;
+  animation: arcade-spin 1.1s ease-out both;
+}
+
+/* Shiny sweep across the text */
+.payout-win::after{
+  content:"";
+  position:absolute; inset:-2px;
+  border-radius:12px;
+  background:
+    linear-gradient(120deg,
+      rgba(255,255,255,0) 0%,
+      rgba(255,255,255,.25) 15%,
+      rgba(255,255,255,0) 32%);
+  transform: translateX(-140%);
+  animation: arcade-sheen .9s ease-out .06s forwards;
+  pointer-events:none;
+}
+
+@keyframes arcade-pop{
+  0% { transform: scale(1); }
+  70%{ transform: scale(1.08); }
+  100%{ transform: scale(1); }
+}
+@keyframes arcade-glow{
+  0%   { box-shadow: 0 0 0 rgba(0,0,0,0); }
+  45%  { box-shadow: 0 0 18px rgba(255,61,247,.25), 0 0 32px rgba(58,245,217,.18) inset; }
+  100% { box-shadow: 0 0 0 rgba(0,0,0,0); }
+}
+@keyframes arcade-spin{
+  from { transform: rotate(0deg) scale(1.02); }
+  to   { transform: rotate(120deg) scale(1); }
+}
+@keyframes arcade-sheen{
+  to { transform: translateX(140%); }
+}
 
 /* 2-line clamp for long names like “Queen of Diamonds” */
 .card p {
@@ -247,6 +319,107 @@
   border-radius: 6px;
   box-shadow: 0 0 10px rgba(255,204,0,0.4);
 }
+#bj-panels{
+  position: static;                  /* no overlay */
+  width: 100%;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(220px, 1fr));
+  gap: .75rem;
+  margin-top: .75rem;
+  align-items: start;
+  grid-column: 1 / 2;                /* ← force left column of .hud */
+  z-index: 1;
+}
+
+/* Optional: keep it visible while scrolling on wide screens */
+@media (min-width:1025px){
+  #bj-panels{ position: sticky; top: 12px; }
+}
+
+/* On narrow screens stack them */
+@media (max-width:900px){
+  #bj-panels{ grid-template-columns: 1fr; }
+}
+
+
+
+/* Let each dialog expand to its grid column */
+.bj-dialog { width: auto; }
+
+.bj-dialog header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: .35rem;
+  font-size: 0.95rem;
+  letter-spacing: .2px;
+}
+
+.bj-dialog .body {
+  display: grid;
+  gap: .4rem;
+}
+@media (max-width:900px){
+  #bj-panels { grid-template-columns: 1fr; }
+}
+
+.bj-dialog footer {
+  margin-top: .35rem;
+  font-size: .8rem;
+}
+
+.muted { color: #aab0ffb0; }
+
+#playerTotals, #dealerTotals {
+  font-size: 1.05rem;
+  font-weight: 600;
+}
+
+#playerCards, #dealerCards {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .35rem .45rem;
+}
+
+.cardchip {
+  border: 1px solid #3a3f7d;
+  background: #171b35;
+  padding: .25rem .5rem;
+  border-radius: 10px;
+  font-size: .85rem;
+}
+
+.chip {
+  display: inline-block;
+  padding: .18rem .5rem;
+  border-radius: 999px;
+  font-size: .75rem;
+  border: 1px solid transparent;
+}
+.chip.win   { background: #123e22; color: #c0ffd7; border-color: #1f6a3a; }
+.chip.loss  { background: #3e1212; color: #ffd0d0; border-color: #6a1f1f; }
+.chip.push  { background: #3b3b3b; color: #f1f1f1; border-color: #646464; }
+.chip.play  { background: #122a3e; color: #cfe8ff; border-color: #1f476a; }
+.chip.bj    { background: #262051; color: #e3d7ff; border-color: #4b409a; }
+
+.handline {
+  display: flex;
+  align-items: baseline;
+  gap: .5rem;
+}
+.handline .idx {
+  width: 1.15rem;
+  text-align: right;
+  color: #aab0ffb0;
+  font-size: .8rem;
+}
+.softflag {
+  font-size: .8rem;
+  opacity: .8;
+  margin-left: .25rem;
+}
+.activeHand { outline: 1px dashed #6ea8ff; outline-offset: 6px; border-radius: 12px; padding: .2rem .3rem; }
+
 
 @media (max-width: 600px) {
   .card, .placeholder { width: 80px; height: 138px; }
@@ -348,11 +521,116 @@
   .age-card{ transform: translateY(6px); opacity:.98; animation: agIn .18s ease-out forwards; }
   @keyframes agIn{ to{ transform: none; opacity:1; } }
 }
+.modal { position:fixed; inset:0; background:rgba(0,0,0,.6); display:flex; align-items:center; justify-content:center; z-index:9999; }
+.modal-content { background:#111; color:#fff; padding:1.25rem; max-width:600px; border-radius:14px; }
+.modal-content h2 { margin-top:0 }
+@keyframes pulse {
+  0% { transform:scale(1); }
+  30% { transform:scale(1.08); }
+  100% { transform:scale(1); }
+}
+.payout-pulse { animation: pulse 450ms ease-out; }
 /* You already have this line in your file, keep it: */
 /* #ageGate :focus-visible { outline: 2px solid var(--accent-3); outline-offset: 2px; } */
+.hud{
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(320px, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+.panel-table { grid-column: 1; }
+.panel-claim { grid-column: 2; }
+
+/* Stack cleanly on tablets/phones */
+@media (max-width: 1024px){
+  .hud { grid-template-columns: 1fr; }
+  .panel-table, .panel-claim { grid-column: 1 / -1; }
+}
+@media (min-width:1025px){
+  #bj-panels{ grid-column: 2; position: sticky; top: 12px; }
+}
+/* Register a custom angle for spinning borders (safe in modern browsers) */
+@property --spin { syntax: "<angle>"; inherits: false; initial-value: 0deg; }
+
+/* Base look for the payout chip */
+#payoutTotal{
+  display: inline-block;
+  padding: 6px 10px;
+  border-radius: 12px;
+  position: relative;
+  background: #0f1425;
+  border: 1px solid rgba(58,245,217,.35);
+  transition: transform .15s ease, box-shadow .15s ease, filter .15s ease;
+}
+
+/* Win pulse: rainbow border + neon glow + bounce */
+#payoutTotal.payout-pulse{
+  border: 2px solid transparent;
+  background:
+    linear-gradient(#0f1425, #0f1425) padding-box,
+    conic-gradient(from var(--spin),
+      #00ffc6, #ffcc00, #ff3df7, #6ae3ff, #00ffc6) border-box;
+  color: #ffffff;
+  text-shadow:
+    0 0 6px #00ffc6,
+    0 0 10px #ff3df7,
+    0 0 16px #ffcc00;
+  box-shadow:
+    0 0 18px rgba(0,255,198,.35),
+    0 0 28px rgba(255,61,247,.25),
+    0 0 40px rgba(255,204,0,.18);
+  animation:
+    payoutBounce .9s cubic-bezier(.2,1.4,.2,1) 1,
+    payoutGlow .9s ease-out 1,
+    payoutSpin 1.2s linear 1;
+  will-change: transform, box-shadow, filter;
+}
+
+@keyframes payoutBounce{
+  0%   { transform: scale(1); }
+  35%  { transform: scale(1.18) rotate(-0.8deg); }
+  65%  { transform: scale(1.10) rotate(0.6deg); }
+  100% { transform: scale(1); }
+}
+
+@keyframes payoutGlow{
+  0%   { filter: saturate(1) brightness(1); }
+  40%  { filter: saturate(1.6) brightness(1.25); }
+  100% { filter: saturate(1) brightness(1); }
+}
+
+@keyframes payoutSpin{
+  to { --spin: 360deg; }
+}
+
+/* Respect reduced motion */
+@media (prefers-reduced-motion: reduce){
+  #payoutTotal.payout-pulse{
+    animation: none;
+    box-shadow: 0 0 18px rgba(0,255,198,.35);
+  }
+}
+#bjPlayer {
+  display: flex;              /* still flex, but vertical */
+  flex-direction: column;     /* stack rows */
+  align-items: center;        /* center the rows */
+  gap: var(--hand-gap);
+}
+
+/* each row of cards */
+#bjPlayer .hand-row {
+  display: flex;
+  gap: var(--hand-gap);
+}
+#bjStatus:empty,
+#playerFooter:empty,
+#dealerFooter:empty {
+  display: none !important;
+}
 
   </style>
 </head>
+<body> 
 <!-- Age gate -->
 <div id="ageGate" class="age-gate" role="dialog" aria-modal="true" aria-labelledby="ageTitle" hidden>
   <div class="age-card" role="document">
@@ -412,9 +690,9 @@
     </svg>
     @NexaKennelKlub
   </a>
-      <a class="btn btn-ghost" href="/"              class="kk-home" aria-label="Go to Home">🏠 Home</a>
-  <a class="btn btn-ghost" href="/play.html" aria-current="page">Poker</a>
-
+      <a class="btn btn-ghost kk-home" href="/" aria-label="Go to Home">🏠 Home</a>
+  <a class="btn btn-primary" href="/play.html" aria-current="page">Play Poker</a>
+</nav>
    <div class="brand">
       <div class="brand-badge">KK</div>
       <h1>PixelPup BlackJack</h1>
@@ -422,74 +700,108 @@
 </header>
   <div class="wrap">
     <div class="hud">
-      <div class="panel" id="bjPanel">
+     <div class="panel panel-table" id="bjPanel">
         <h1>Blackjack</h1>
-        <div id="bjHow" class="callout" role="region" aria-label="How to play blackjack">
-  <strong>How to play:</strong>
-  Get closer to 21 than the dealer without busting. Aces count as 1 or 11. Dealer hits to 16 and stands on 17.
-  Press <em>Feed the dealer</em> to start, then <em>Hit</em> or <em>Stand</em>.
-  <a href="bjpoints.html" class="btn btn-ghost" style="margin-left:8px;">Payouts</a>
-  <button class="close" aria-label="Hide tips">×</button>
-</div>
+     <div id="bjHowto" class="modal" style="display:none">
+  <div class="modal-content">
+    <h2>How to Play Blackjack (PixelPup)</h2>
+    <ul>
+      <li>Goal: beat dealer without going over 21.</li>
+      <li>Face cards = 10, Aces = 1 or 11.</li>
+      <li>Natural Blackjack (Ace + 10-value on deal) auto-wins.</li>
+      <li>Actions: Hit, Stand, Double (draw 1 then stand), Split (one split, pairs only).</li>
+      <li>Points/KIBL: Win = +3 credits; Natural BJ = +6; Double win adds +2; Split wins slightly reduced. No wagering.</li>
+      <li>Fairness: provably fair deck (commit-reveal). See “Fairness” in menu.</li>
+      <li>Limits: we pace play to keep it fair for everyone.</li>
+    </ul>
+    <button id="bjHowtoClose">Let’s play</button>
+  </div>
+   </div>
          <p id="userTag" class="readout"></p>
          <a class="btn btn-ghost" href="bjachievements.html">Achievements</a>
          <a class="btn btn-ghost" href="bjpoints.html">Points</a>
+        <button id="dailyReward" class="btn btn-ghost">Claim Daily Reward</button>
+        
+  
         
         <p id="bjFair" class="readout"></p>
-
+         
         <div class="readout">Dealer</div>
         <div id="bjDealer" class="card-hand" aria-live="polite"></div>
 
         <div class="readout">You</div>
+        <p id="payoutTotal">Total Payout: 0 KIBL</p>
         <div id="bjPlayer" class="card-hand" aria-live="polite"></div>
 
         <div class="controls">
           <button id="bjStart"  class="btn btn-primary">Feed the dealer</button>
           <button id="bjHit"    class="btn" disabled>Hit</button>
           <button id="bjStand"  class="btn" disabled>Stand</button>
-         <button id="bjDoubleBtn" class="hidden">Double</button>
-          <button id="bjSplitBtn"  class="hidden">Split</button>
+         <button id="bjDoubleBtn" class="btn" disabled>Double</button>
+          <button id="bjSplitBtn"  class="btn" disabled>Split</button>
+        
         </div>
+        <!-- Blackjack Totals Panels -->
+<div id="bj-panels" aria-live="polite">
+  <div id="playerPanel" class="bj-dialog">
+    <header>
+      <strong>Your Hand</strong>
+      <span id="playerStatus" class="chip"></span>
+    </header>
+    <div class="body">
+      <div id="playerTotals"></div>
+      <div id="playerCards"></div>
+    </div>
+    <footer id="playerFooter" class="muted"></footer>
+  </div>
 
-        <p id="bjMsg" class="readout"></p>
+  <div id="dealerPanel" class="bj-dialog">
+    <header>
+      <strong>Dealer</strong>
+      <span id="dealerStatus" class="chip"></span>
+    </header>
+    <div class="body">
+      <div id="dealerTotals"></div>
+      <div id="dealerCards"></div>
+    </div>
+    <footer id="dealerFooter" class="muted"></footer>
+  
+      <div id="bjStatus" class="muted"></div>
        
       </div>
 
-      <!-- Right sidebar: reuse your existing payout/leaderboard flows -->
-      <div class="panel">
-        <div class="controls">
-           <button id="dailyReward" class="btn btn-ghost">Claim Daily Reward</button>
-          <p id="payoutTotal">Total Payout: 0 KIBL</p>
-        </div>
-
-        <section class="panel" style="margin-top:10px;">
-          <h2>Claim</h2>
-          <div class="field">
-            <label class="readout" for="addressInput">Wallet address</label>
-            <input id="addressInput" placeholder="nexa:..." style="width:100%; padding:10px 12px; border-radius:10px;
-                   border:1px solid rgba(58,245,217,.35); background:#0f1425; color:var(--text)"/>
-          </div>
-          <div class="field">
-            <label class="readout">Human check</label>
-            <div id="payoutCaptcha" class="h-captcha"
-                 data-sitekey="dcc8a3aa-1db0-4d48-9260-df5c25846d92"
-                 data-size="normal"></div>
-          </div>
-          <div class="controls"><button id="ClaimPayout" class="btn btn-primary" type="button">FEED ME! 🐾</button></div>
-          <div id="loading" class="readout" style="display:none;">Processing…</div>
-          <p id="result" class="readout">Idle</p>
-        </section>
-
-        <div class="panel" style="margin-top:10px;">
-          <h2>Season Points Window (Skill Points)</h2>
-          <ol id="leaderboardList" class="leaderboard"></ol>
-          <div class="readout" style="margin-top:6px;">
-   <a class="btn btn-ghost" href="/leaderboard.html?game=blackjack">See full leaderboard →</a>
+ 
 </div>
-        </div>
-      </div>
+
+<section class="panel claim-block" style="margin-top:10px;">
+   </div>
+  <section class="panel" style="margin-top:10px;">
+    <h2>Season Points Window (Skill Points)</h2>
+    <ol id="leaderboardList" class="leaderboard"></ol>
+    <div class="readout" id="lbHint" style="margin-top:6px;"></div>
+    <a class="btn btn-ghost" href="/leaderboard.html?game=blackjack">See full leaderboard →</a>
+    <h2>Claim</h2>
+    <div class="field">
+      <label class="readout" for="addressInput">Wallet address</label>
+      <input id="addressInput" placeholder="nexa:..." style="width:100%; padding:10px 12px; border-radius:10px;
+             border:1px solid rgba(58,245,217,.35); background:#0f1425; color:var(--text)"/>
+    <div class="field">
+      <label class="readout">Human check</label>
+      <div id="payoutCaptcha" class="h-captcha"
+           data-sitekey="170a6dc4-35b6-4266-a2ce-6f3eb8c85d9c"
+           data-size="normal"></div>
+    <div class="controls">
+      <button id="ClaimPayout" class="btn btn-primary" type="button">FEED ME! 🐾</button>
     </div>
-  </div>
+    <div id="loading" class="readout" style="display:none;">Processing…</div>
+    <p id="result" class="readout">Idle</p>
+  </section>
+  
+</div>
+
+    
+</div>
+        
 
   <audio id="feedSound" src="dogfood.mp3" preload="auto"></audio>
 
@@ -502,27 +814,31 @@
       const { csrfToken } = await r.json();
       __csrf = csrfToken;
     }
-    async function postWithCsrf(input, init = {}) {
-  const baseHeaders = init.headers ? { ...init.headers } : {};
-  if (init.body && !baseHeaders['Content-Type']) baseHeaders['Content-Type'] = 'application/json';
-
-  // NEW: make sure we have a token before first attempt
-  if (!__csrf) { try { await fetchCsrf(); } catch {} }
-
-  const makeReq = () => fetch(input, {
-    ...init,
-    method: init.method || 'POST',
-    credentials: 'include',
-    headers: { 'x-csrf-token': __csrf || '', ...baseHeaders }
-  });
-
-  let resp = await makeReq();
-  if (resp.status === 403) {
-    const data = await resp.clone().json().catch(() => ({}));
-    if (data?.error === 'bad_csrf') { await fetchCsrf(); resp = await makeReq(); }
+ // replace your postWithCsrf with this sturdier version
+async function postWithCsrf(url, body = {}) {
+  // if the token isn’t there yet, try once more
+  if (!window.csrfToken) {
+    await ensureCsrf();
   }
-  return resp;
+  const r = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'CSRF-Token': window.csrfToken || ''
+    },
+    credentials: 'include',
+    body: JSON.stringify(body)
+  });
+  // Try to parse JSON even on non-200s so we can surface server errors
+  let j = null;
+  try { j = await r.json(); } catch {}
+  if (!r.ok || (j && j.ok === false)) {
+    const msg = (j && (j.error || j.message)) || `HTTP ${r.status}`;
+    throw new Error(msg);
+  }
+  return j;
 }
+
 async function ensureCsrf(){
   try {
     const r = await fetch('/api/csrf', { credentials: 'include' });
@@ -531,6 +847,252 @@ async function ensureCsrf(){
   } catch {}
 }
 document.addEventListener('DOMContentLoaded', ensureCsrf);
+(function showHowtoOnce(){
+  const k = 'bj_seen_instructions_v1';
+  if (localStorage.getItem(k)) return;
+  const m = document.getElementById('bjHowto');
+  const b = document.getElementById('bjHowtoClose');
+  if (m && b) {
+    m.style.display = 'flex';
+    b.onclick = () => { m.style.display='none'; localStorage.setItem(k, '1'); };
+  }
+})();
+
+
+/* replace your ensureCsrf + DOMContentLoaded block with this */
+
+async function ensureCsrf() {
+  try {
+    const r = await fetch('/api/csrf', { credentials: 'include' });
+    const j = await r.json();
+    if (j && j.csrfToken) {
+      window.csrfToken = j.csrfToken;
+    }
+  } catch (e) {
+    console.warn('CSRF fetch failed', e);
+  }
+}
+
+document.addEventListener('DOMContentLoaded', async () => {
+  await ensureCsrf();                 // <-- make sure token is ready
+  showHowtoOnce();
+});
+// --- Size/fit controls ---
+const sizeSlider = document.getElementById('bjSize');
+const fitBtn     = document.getElementById('bjFit');
+
+function applyScaleFromSlider(){
+  const v = Math.max(80, Math.min(125, Number(sizeSlider?.value||100)));
+  const scale = v / 100;
+  document.documentElement.style.setProperty('--ui-scale', String(scale));
+  try { localStorage.setItem('kk_bj_scale', String(v)); } catch {}
+}
+
+// Compute a base card width that fits the widest row we can see
+function fitBjToScreen(){
+  const panel = document.getElementById('bjPanel');
+  if (!panel) return;
+
+  const gap = parseFloat(getComputedStyle(document.documentElement)
+               .getPropertyValue('--hand-gap') || '10') || 10;
+
+  // How many cards in the widest visible row?
+  const dealerCount = document.querySelectorAll('#bjDealer .card').length || 2;
+  const rowCounts = Array.from(document.querySelectorAll('#bjPlayer .hand-row'))
+                    .map(r => r.querySelectorAll('.card, .placeholder').length);
+  const n = Math.max(dealerCount, ...(rowCounts.length ? rowCounts : [2]));
+
+  // Available width inside the table panel (minus a little padding)
+  const available = panel.clientWidth - 32;
+  const perCard = (available - gap * (n - 1)) / n;
+
+  // Clamp so it always looks nice
+  const base = Math.max(64, Math.min(perCard, 136)); // px
+  document.documentElement.style.setProperty('--cardBaseW', base + 'px');
+}
+
+function initBjSizeUI(){
+  // Restore saved scale
+  try {
+    const saved = Number(localStorage.getItem('kk_bj_scale'));
+    if (sizeSlider && saved) sizeSlider.value = saved;
+  } catch {}
+  applyScaleFromSlider();
+  fitBjToScreen();
+
+  sizeSlider?.addEventListener('input', applyScaleFromSlider);
+  fitBtn?.addEventListener('click', fitBjToScreen);
+
+  // Re-fit on window resize
+  window.addEventListener('resize', fitBjToScreen);
+
+  // Re-fit whenever hands change (hit/stand/split/double)
+  const player = document.getElementById('bjPlayer');
+  const dealer = document.getElementById('bjDealer');
+  const mo = new MutationObserver(fitBjToScreen);
+  if (player) mo.observe(player, { childList:true, subtree:true });
+  if (dealer) mo.observe(dealer, { childList:true, subtree:true });
+}
+
+// Call once when the page boots (after DOM ready)
+initBjSizeUI();
+
+
+function showHowtoOnce() {
+  const k = 'bj_seen_instructions_v1';
+  if (localStorage.getItem(k)) return;
+  const m = document.getElementById('bjHowto');
+  const b = document.getElementById('bjHowtoClose');
+  if (m && b) {
+    m.style.display = 'flex';
+    b.addEventListener('click', () => {
+      m.style.display = 'none';
+      localStorage.setItem(k, '1');
+    }, { once: true });
+  }
+}
+
+function flashPayout(){
+  if (!payoutEl) return;
+  // retrigger the one-shot animation reliably
+  payoutEl.classList.remove('payout-win');
+  // force reflow
+  void payoutEl.offsetWidth;
+  payoutEl.classList.add('payout-win');
+  // clean up after the glow ends
+  setTimeout(() => payoutEl?.classList.remove('payout-win'), 1400);
+}
+
+function confettiBurst(count = 48, ms = 1800){
+  const wrap = document.createElement('div');
+  wrap.className = 'fx-confetti';
+  document.body.appendChild(wrap);
+  for (let i=0;i<count;i++){
+    const s = document.createElement('i');
+    s.style.setProperty('--x', `${Math.random()*100}%`);
+    s.style.setProperty('--rot', `${Math.random()*360}deg`);
+    s.style.setProperty('--dur', `${1000 + Math.random()*900}ms`);
+    wrap.appendChild(s);
+  }
+  setTimeout(()=> wrap.remove(), ms + 500);
+}
+
+function bjScore(cards) {
+  let total = 0, aces = 0;
+  for (const c of (cards||[])) {
+    const r = c.rank;
+    if (r === 'Ace') { total += 11; aces++; }
+    else if (r === 'King' || r === 'Queen' || r === 'Jack') total += 10;
+    else total += Number(r) || 0;
+  }
+  while (total > 21 && aces > 0) { total -= 10; aces--; }
+  return { total, soft: aces > 0, isBJ: (cards?.length === 2 && total === 21) };
+}
+
+function renderCardChips(cards) {
+  return (cards||[]).map(c => {
+    const text = c.displayText || `${c.rank} of ${c.suit}`;
+    return `<span class="cardchip">${text}</span>`;
+  }).join('');
+}
+
+function setChip(el, kind, text) {
+  el.className = `chip ${kind}`;
+  el.textContent = text;
+}
+
+function updatePlayerPanelFromSnapshot(data) {
+  const pTotalsEl  = document.getElementById('playerTotals');
+  const pCardsEl   = document.getElementById('playerCards');
+  const pStatusEl  = document.getElementById('playerStatus');
+  const pFooterEl  = document.getElementById('playerFooter');
+
+  pFooterEl.textContent = '';
+
+  // Start payload uses `player` (array of cards); later snapshots use `players` (array of hands)
+  const hands = Array.isArray(data.players) && data.players.length
+    ? data.players.map((ph, i) => ({ ...ph, idx: i }))
+    : (data.player ? [{ cards: data.player, idx: 0 }] : []);
+
+  if (!hands.length) {
+    pTotalsEl.textContent = '—';
+    pCardsEl.innerHTML = '';
+    setChip(pStatusEl, 'play', 'Ready');
+    return;
+  }
+
+  // Build per-hand lines (supporting split)
+  const lines = [];
+  const cardRows = [];
+  const activeIdx = (typeof data.activeIndex === 'number') ? data.activeIndex : 0;
+
+  for (const h of hands) {
+    const { total, soft, isBJ } = bjScore(h.cards || []);
+    const idx = (hands.length > 1) ? `<span class="idx">${h.idx+1}.</span>` : '';
+    const softStr = soft ? `<span class="softflag">(soft)</span>` : '';
+    lines.push(`<div class="handline ${h.idx === activeIdx && !data.settled ? 'activeHand':''}">
+      ${idx}<div>Total: <strong>${total}</strong> ${softStr}</div>
+    </div>`);
+    cardRows.push(`<div class="handline">${idx}<div>${renderCardChips(h.cards||[])}</div></div>`);
+
+    // Set a simple status based on result when settled
+    if (data.settled && h.result) {
+      const map = { win:'win', bj:'bj', push:'push', loss:'loss', bust:'loss' };
+      setChip(pStatusEl, map[h.result] || 'play', h.result.toUpperCase());
+    } else {
+      setChip(pStatusEl, isBJ ? 'bj' : 'play', isBJ ? 'BLACKJACK' : (data.settled ? 'Done' : 'Your move'));
+    }
+  }
+
+  pTotalsEl.innerHTML = lines.join('');
+  pCardsEl.innerHTML  = cardRows.join('');
+
+  // If server returned credits/points on the final settle, echo a tiny footer
+  if (data.settled && (Number.isFinite(data.credit) || Number.isFinite(data.points))) {
+    const kibl = Math.floor((Number(data.credit)||0)/100);
+    const pts  = Number.isFinite(data.points) ? Number(data.points) : null;
+    pFooterEl.textContent = `${kibl ? `+${kibl} KIBL` : ''}${kibl && pts ? ' · ' : ''}${(pts||pts===0) ? `+${pts} pts` : ''}`;
+  }
+}
+
+function updateDealerPanelFromSnapshot(data) {
+  const dTotalsEl  = document.getElementById('dealerTotals');
+  const dCardsEl   = document.getElementById('dealerCards');
+  const dStatusEl  = document.getElementById('dealerStatus');
+  const dFooterEl  = document.getElementById('dealerFooter');
+
+  if (!data.dealer) {
+    dTotalsEl.textContent = '—';
+    dCardsEl.innerHTML = '';
+    setChip(dStatusEl, 'play', 'Waiting');
+    dFooterEl.textContent = '';
+    return;
+  }
+
+  if (data.settled && Array.isArray(data.dealer.full)) {
+    const { total, soft, isBJ } = bjScore(data.dealer.full);
+    const softStr = soft ? ' (soft)' : '';
+    dTotalsEl.innerHTML = `Total: <strong>${total}</strong>${softStr}`;
+    dCardsEl.innerHTML  = renderCardChips(data.dealer.full);
+    setChip(dStatusEl, isBJ ? 'bj' : 'play', isBJ ? 'BLACKJACK' : 'Revealed');
+    dFooterEl.textContent = '';
+  } else {
+    // Not settled yet — show upcard only
+    const up = data.dealer.up ? [data.dealer.up] : [];
+    dTotalsEl.textContent = 'Upcard shown';
+    dCardsEl.innerHTML    = renderCardChips(up);
+    setChip(dStatusEl, 'play', 'In play');
+    dFooterEl.textContent = 'Dealer total hidden until settle';
+  }
+}
+
+// Call this anywhere you already handle a BJ JSON response (start/hit/stand/double/split)
+function updateBjPanels(snapshotJson) {
+  try {
+    updatePlayerPanelFromSnapshot(snapshotJson || {});
+    updateDealerPanelFromSnapshot(snapshotJson || {});
+  } catch (_) {}
+}
 
    const API = Object.freeze({
   profile:'/api/profile',
@@ -549,14 +1111,25 @@ document.addEventListener('DOMContentLoaded', ensureCsrf);
     const bjFair   = document.getElementById('bjFair');
     const bjDealer = document.getElementById('bjDealer');
     const bjPlayer = document.getElementById('bjPlayer');
-    const bjMsg    = document.getElementById('bjMsg');
+      const btnStart  = document.getElementById('bjStart');
+  const btnHit    = document.getElementById('bjHit');
+  const btnStand  = document.getElementById('bjStand');
+  const btnDouble = document.getElementById('bjDoubleBtn');
+  const btnSplit  = document.getElementById('bjSplitBtn');
+  const bjMsg = document.getElementById('bjStatus');
+const leaderboardList = document.getElementById('leaderboardList');
 
-    const btnStart = document.getElementById('bjStart');
-    const btnHit   = document.getElementById('bjHit');
-    const btnStand = document.getElementById('bjStand');
-    const btnDouble = document.getElementById('bjDoubleBtn'); // optional (hidden in alpha)
-    const btnSplit  = document.getElementById('bjSplitBtn');  // optional (hidden in alpha)
-    const leaderboardList = document.getElementById('leaderboardList');
+  function applyBJCan(can = {}) {
+  btnHit.disabled    = !(can.hit ?? true);
+  btnStand.disabled  = !(can.stand ?? true);
+  btnDouble.disabled = !(can.double ?? false);
+
+  // Split: show only when server says it’s allowed AND enable the button
+  const allowSplit = !!(can.split);
+  btnSplit.disabled = !allowSplit;
+  btnSplit.classList.toggle('hidden', !allowSplit);
+}
+
 
     let totalPayout = 0;
      function formatWait(ms) {
@@ -569,21 +1142,37 @@ const REVEAL_EXTRA_MS = 600 ;
 const setDisabled = (el, v) => { if (el) el.disabled = !!v; };
 
   function afterActionSnapshot(d){
-    const dealer = d.dealer.full ? d.dealer : d.dealer;
-    renderHands({ dealer, player:d.players });
-
+  const dealer = d.dealer.full ? d.dealer : d.dealer;
+  renderHands({ dealer, player:d.players });
+fitBjToScreen();
+  const status = document.getElementById('bjStatus');
+  if (status){
     if (d.settled){
-      setDisabled(btnStart, false);
-      setDisabled(btnHit,   true);
-      setDisabled(btnStand, true);
-      setDisabled(btnDouble,true);
-      setDisabled(btnSplit, true);
-      announceAndRefresh(d);
+      const res = Array.isArray(d.results) && d.results[0]?.result;
+      status.textContent = res === 'bj' ? 'Blackjack!' :
+                           res === 'win' ? 'Win' :
+                           res === 'push' ? 'Push' :
+                           (res === 'bust' || res === 'loss') ? 'Loss' : 'Hand settled';
     } else {
-      setDisabled(btnHit,   false);
-      setDisabled(btnStand, false);
+      status.textContent = 'Your move';
     }
   }
+
+  // keep the side panels in sync
+  updateBjPanels(d);
+
+  if (d.settled){
+    applyBJCan({ hit:false, stand:false, double:false, split:false });
+    announceAndRefresh(d);
+
+      btnStart.disabled = false;
+    bjMsg.textContent = 'Round settled. Press Feed the dealer for a new round.';
+  } else {
+    applyBJCan({ hit:true, stand:true, double:false, split:false });
+    btnStart.disabled = true;
+  }
+}
+
     function setButtons({ deal, hit, stand }) {
     const btnStart = document.getElementById('bjStart');
     const btnHit   = document.getElementById('bjHit');
@@ -639,12 +1228,25 @@ function toast(html, { type = 'info', timeout = 2500 } = {}) {
   }
   if (creditUnits > 0) {
     toast(`You won <strong>${creditUnits}</strong> KIBL!`, { type: 'win', timeout: 2500 });
+      
+    // Sound: restart and play (user gesture already happened)
+    const sfx = document.getElementById('feedSound');
+    if (sfx) { try { sfx.currentTime = 0; sfx.volume = 0.6; sfx.play().catch(()=>{}); } catch(_){} }
+  flashPayout();
+
+  // 🎉 optional quick confetti burst (comment out if you prefer)
+  confettiBurst();
+    // Haptic (best-effort on mobile)
+    if (navigator.vibrate) { navigator.vibrate([10, 40, 10]); }
+
+    // Pulse the payout readout
+    payoutEl.classList.add('payout-pulse');
+    setTimeout(() => payoutEl.classList.remove('payout-pulse'), 1900);
   }
 
   payoutEl.textContent = `Total Payout: ${balanceUnits} KIBL`;
   totalPayout = balanceUnits;
   payoutBtn.disabled = (totalPayout === 0);
-
   // Always refresh profile + leaderboard so numbers are current
   loadProfile();
   loadLeaderboard();
@@ -707,110 +1309,145 @@ async function loadLeaderboard(){
   } catch(e){ console.warn('blackjack window LB failed', e); }
 }
  function renderHands({ dealer, player }){
-      // dealer
-      bjDealer.innerHTML = '';
-      if (dealer.full){
-        dealer.full.forEach(c => bjDealer.appendChild(cardEl(c, false)));
-      } else {
-        bjDealer.appendChild(cardEl(dealer.up, false));
-        bjDealer.appendChild(cardEl(dealer.holeHidden ? dealer.up : dealer.up, dealer.holeHidden));
-      }
-      // player(s)
-      bjPlayer.innerHTML = '';
-      player.forEach((h,i)=>{
-        const handWrap = document.createElement('div'); handWrap.style.display='flex'; handWrap.style.gap='10px';
-        h.cards.forEach(c => handWrap.appendChild(cardEl(c, false)));
-        bjPlayer.appendChild(handWrap);
-      });
-    }
+  bjDealer.innerHTML = '';
+  if (dealer.full){
+    dealer.full.forEach(c => bjDealer.appendChild(cardEl(c, false)));
+  } else {
+    bjDealer.appendChild(cardEl(dealer.up, false));
+    bjDealer.appendChild(cardEl(dealer.holeHidden ? dealer.up : dealer.up, dealer.holeHidden));
+  }
+fitBjToScreen();
+  bjPlayer.innerHTML = '';
+  (player || []).forEach(h => {
+    const row = document.createElement('div');
+    row.className = 'hand-row';
+    (h.cards || []).forEach(c => row.appendChild(cardEl(c, false)));
+    bjPlayer.appendChild(row);
+  });
+}
+
 
     async function startRound(){
-      try{
-        const r = await postWithCsrf(API.bj.start, { method:'POST' });
-        const d = await r.json();
-        if (!r.ok || !d.ok) { alert(d.error||'Start failed'); return; }
-        if (d.fair?.commit && d.fair?.handId){
-          bjFair.textContent = `Commit: ${d.fair.commit.slice(0,10)}… (hand ${d.fair.handId.slice(0,8)})`;
-        }
-        renderHands({ dealer:d.dealer, player:[{ cards:d.player }] });
-        btnStart.disabled = true;
-        btnHit.disabled = btnStand.disabled = false;
-        bjMsg.textContent = 'Your move.';
-      }catch(e){ alert('Start failed.'); }
+  try{
+    const d = await postWithCsrf(API.bj.start, {});   // already JSON
+    if (!d.ok) throw new Error(d.error || 'Start failed');
+
+    if (d.fair?.commit && d.fair?.handId){
+      bjFair.textContent = `Commit: ${d.fair.commit.slice(0,10)}… (hand ${d.fair.handId.slice(0,8)})`;
     }
+
+    // If server dealt a natural BJ and settled immediately, just snapshot it.
+    if (d.settled) {
+      afterActionSnapshot(d);
+      return;
+    }
+
+    // Normal start payload: dealer upcard + player’s two cards in d.player
+    renderHands({ dealer: d.dealer, player: [{ cards: d.player }] });
+    updateBjPanels(d);
+
+    btnStart.disabled = true;
+    btnHit.disabled = btnStand.disabled = false;
+    bjMsg.textContent = 'Your move.';
+    applyBJCan(d.can || {});
+  } catch(e){
+    alert(`Start failed: ${e.message || e}`);
+  }
+}
   
     async function hit(){ 
-      const r = await postWithCsrf(API.bj.hit, { method:'POST' });
-      const d = await r.json(); if (!r.ok || !d.ok){ alert(d.error||'Hit failed'); return; }
-      afterActionSnapshot(d);
-      if (d.settled) bjMsg.textContent='Round settled. Press Feed the dealer for a new round.';
-    }
-    async function stand() {
-    try {
-      setButtons({ hit:false, stand:false });
-
-      const r = await postWithCsrf(API.bj.stand, { method: 'POST' });
-      const d = await r.json();
-      if (!r.ok || !d.ok) throw new Error(d.error || 'Stand failed');
-
-      // use the server snapshot only
-      afterActionSnapshot(d);
-
-      if (d.fair?.serverSeed) {
-        bjFair.textContent =
-          `Reveal: seed=${d.fair.serverSeed.slice(0,12)}… • verify: /api/fair/${d.fair.handId}`;
-      }
-
-      await sleep(600);
-    } catch (err) {
-      toast(`Stand failed: ${err.message}`, { type: 'error' });
-      setButtons({ deal:true, hit:false, stand:false });
-    }
+  try{
+    const d = await postWithCsrf(API.bj.hit, {});
+    if (!d.ok) throw new Error(d.error || 'Hit failed');
+    afterActionSnapshot(d);
+    if (d.settled) bjMsg.textContent = 'Round settled. Press Feed the dealer for a new round.';
+  } catch(e){
+    alert(`Hit failed: ${e.message || e}`);
   }
-    async function doubleDown(){
-      const r = await postWithCsrf(API.bj.double, { method:'POST' });
-      const d = await r.json(); if (!r.ok || !d.ok){ alert(d.error||'Double failed'); return; }
-      afterActionSnapshot(d);
+}
+
+async function stand(){
+  try{
+    setButtons({ hit:false, stand:false });
+    const d = await postWithCsrf(API.bj.stand, {});
+    if (!d.ok) throw new Error(d.error || 'Stand failed');
+
+    afterActionSnapshot(d);
+    if (d.fair?.serverSeed) {
+      bjFair.textContent = `Reveal: seed=${d.fair.serverSeed.slice(0,12)}… • verify: /api/fair/${d.fair.handId}`;
     }
-    async function split(){
-      const r = await postWithCsrf(API.bj.split, { method:'POST' });
-      const d = await r.json(); if (!r.ok || !d.ok){ alert(d.error||'Split failed'); return; }
-      afterActionSnapshot(d);
-    }
+    await sleep(600);
+  } catch(e){
+    toast(`Stand failed: ${e.message || e}`, { type:'error' });
+    setButtons({ deal:true, hit:false, stand:false });
+  }
+}
+
+async function doubleDown(){
+  try{
+    const d = await postWithCsrf(API.bj.double, {});
+    if (!d.ok) throw new Error(d.error || 'Double failed');
+    afterActionSnapshot(d);
+  } catch(e){
+    alert(`Double failed: ${e.message || e}`);
+  }
+}
+
+async function split(){
+  try{
+    const d = await postWithCsrf(API.bj.split, {});
+    if (!d.ok) throw new Error(d.error || 'Split failed');
+    afterActionSnapshot(d);
+  } catch(e){
+    alert(`Split failed: ${e.message || e}`);
+  }
+}
 
     // ——— Daily & Payout (copied minimal from poker page) ———
     async function onDaily(){
-      const res = await postWithCsrf(API.daily, { method:'POST' });
-      const data = await res.json();
-      if (!res.ok || !data.ok){
-        const mins = data.retryInMs ? Math.ceil(data.retryInMs/60000) : 'later';
-        alert('Daily already claimed. Try again in ~'+mins+' minutes.');
-        return;
-      }
-      const creditUnits = Math.floor((data.credit||0)/100);
-      const balanceUnits = Math.floor((data.sessionBalance||0)/100);
-      alert(`Daily reward claimed: +${creditUnits} KIBL`);
-      payoutEl.textContent = `Total Payout: ${balanceUnits} KIBL`;
-      totalPayout = balanceUnits; payoutBtn.disabled = (totalPayout===0);
+  try{
+    const data = await postWithCsrf(API.daily, {});
+    if (!data.ok){
+      const mins = data.retryInMs ? Math.ceil(data.retryInMs/60000) : 'later';
+      alert('Daily already claimed. Try again in ~' + mins + ' minutes.');
+      return;
     }
-    async function onPayout(){
-      if (totalPayout===0){ alert('No payout to claim!'); return; }
-      const addr = addressInput.value.trim();
-      if (!/^nexa:/.test(addr)){ alert('Please enter a valid Nexa address (nexa:...)'); return; }
-      try{
-        loading.style.display='block'; payoutBtn.disabled=true;
-        const resp = await postWithCsrf(API.payout, { method:'POST',
-          headers:{ 'Content-Type':'application/json' },
-          body: JSON.stringify({ playerAddress: addr, 'h-captcha-response': (window.hcaptcha?.getResponse?.()||'') })
-        });
-        const data = await resp.json().catch(()=> ({}));
-        if (!resp.ok || data.error){ alert('Payout failed: '+(data.error||resp.statusText)); return; }
-        alert(`Payout successful! Tx ID: ${data.txId}`);
-        totalPayout = data.remainingKIBL ?? 0;
-        payoutEl.textContent = `Total Payout: ${totalPayout} KIBL`;
-        payoutBtn.disabled = (totalPayout===0);
-      } finally { loading.style.display='none'; }
+    const creditUnits  = Math.floor((data.credit||0)/100);
+    const balanceUnits = Math.floor((data.sessionBalance||0)/100);
+    alert(`Daily reward claimed: +${creditUnits} KIBL`);
+    payoutEl.textContent = `Total Payout: ${balanceUnits} KIBL`;
+    totalPayout = balanceUnits; payoutBtn.disabled = (totalPayout===0);
+  } catch(e){
+    alert(`Daily failed: ${e.message || e}`);
+  }
+}
+
+async function onPayout(){
+  if (totalPayout===0){ alert('No payout to claim!'); return; }
+  const addr = addressInput.value.trim();
+  if (!/^nexa:/.test(addr)){ alert('Please enter a valid Nexa address (nexa:...)'); return; }
+  try{
+    loading.style.display='block'; payoutBtn.disabled=true;
+
+    const data = await postWithCsrf(API.payout, {
+      playerAddress: addr,
+      'h-captcha-response': (window.hcaptcha?.getResponse?.() || '')
+    });
+
+    if (!data || data.error) {
+      throw new Error(data?.error || 'Unknown payout error');
     }
+
+    alert(`Payout successful! Tx ID: ${data.txId}`);
+    totalPayout = data.remainingKIBL ?? 0;
+    payoutEl.textContent = `Total Payout: ${totalPayout} KIBL`;
+    payoutBtn.disabled = (totalPayout===0);
+  } catch(e){
+    alert(`Payout failed: ${e.message || e}`);
+  } finally {
+    loading.style.display='none';
+  }
+}
 
     // Wire up
     btnStart.addEventListener('click', startRound);
@@ -818,6 +1455,9 @@ async function loadLeaderboard(){
     btnStand.addEventListener('click', stand);
     dailyBtn.addEventListener('click', onDaily);
     payoutBtn.addEventListener('click', onPayout);
+    btnDouble.addEventListener('click', doubleDown);
+    btnSplit .addEventListener('click', split);
+
 
     // bootstrap
     (async ()=>{

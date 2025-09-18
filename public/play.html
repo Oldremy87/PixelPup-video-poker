@@ -8,6 +8,7 @@
   <style>
     /* ===== Retro PixelPup theme (CSP-safe, no external fonts) ===== */
     :root{
+      --ui-scale: 1;
        --hand-gap: 10px;
         --card-ratio: 1.6;   /* height = width * ratio; tweak if your art needs */
       --cardW: 100px;    
@@ -22,6 +23,10 @@
       --card-border: #3af5d9;
       --danger: #ff5577;
       --ok: #45ff99;
+       --win-cyan:  #3af5d9;
+  --win-pink:  #ff3df7;
+  --win-gold:  #ffcc00;
+      
     }
     /* Always hide elements with [hidden], and loaders by default */
 [hidden] { display: none !important; }
@@ -158,8 +163,9 @@
     /* Card visual */
     /* Card + placeholder sizing and layout */
 .card, .placeholder {
-  width: var(--cardW);
-  height: calc(var(--cardW) * var(--card-ratio));          
+ --_w: calc(var(--cardBaseW, var(--cardW)) * var(--ui-scale));
+  width: var(--_w);
+  height: calc(var(--_w) * var(--card-ratio)); 
   border-radius: 10px;
   background: var(--card-bg);
   color: #fff;
@@ -174,7 +180,9 @@
   text-align: center;
   box-shadow: 0 0 20px rgba(0,255,198,0.1);
 }
-
+body.compact {
+  --hand-gap: 8px;
+}
 /* Dealing placeholders centered and unbroken */
 .placeholder {
   display: flex;
@@ -205,6 +213,12 @@
   .brand h1 { font-size: 1.35rem; }
   body { padding: 12px; }
 }
+@keyframes pulse {
+  0% { transform:scale(1); }
+  30% { transform:scale(1.08); }
+  100% { transform:scale(1); }
+}
+.payout-pulse { animation: pulse 450ms ease-out; }
 
 
 /* 2-line clamp for long names like “Queen of Diamonds” */
@@ -246,7 +260,76 @@
   border-radius: 6px;
   box-shadow: 0 0 10px rgba(255,204,0,0.4);
 }
+/* Lightweight confetti (optional flair) */
+.fx-confetti{ position:fixed; inset:0; pointer-events:none; z-index:9999; overflow:hidden; }
+.fx-confetti i{
+  position:absolute; top:-12px; left: var(--x,50%);
+  width:8px; height:14px; border-radius:2px;
+  background: linear-gradient(var(--rot,0deg),
+              var(--win-pink), var(--win-gold), var(--win-cyan));
+  opacity:.95;
+  transform: rotate(var(--rot,0deg));
+  animation: arcade-confetti var(--dur,1200ms) ease-out forwards;
+}
+@keyframes arcade-confetti{
+  0%   { transform: translateY(-10px) rotate(var(--rot,0deg)); }
+  100% { transform: translateY(calc(100vh + 12px)) rotate(calc(var(--rot,0deg) + 260deg)); opacity:0; }
+}
+#payoutTotal{ position: relative; display:inline-block; border-radius:12px; padding:2px 6px; }
 
+/* One-shot bling class we add/remove from JS */
+.payout-win{
+  /* quick pop + glow + sheen */
+  animation:
+    arcade-pop .18s ease-out,
+    arcade-glow 1.2s ease-out;
+  filter: saturate(1.2);
+}
+
+/* Neon aura behind the text */
+.payout-win::before{
+  content:"";
+  position:absolute; inset:-8px;
+  border-radius:14px;
+  background: conic-gradient(from 0deg,
+    var(--win-pink), var(--win-gold), var(--win-cyan), var(--win-pink));
+  filter: blur(14px) opacity(.55);
+  z-index:-1;
+  animation: arcade-spin 1.1s ease-out both;
+}
+
+/* Shiny sweep across the text */
+.payout-win::after{
+  content:"";
+  position:absolute; inset:-2px;
+  border-radius:12px;
+  background:
+    linear-gradient(120deg,
+      rgba(255,255,255,0) 0%,
+      rgba(255,255,255,.25) 15%,
+      rgba(255,255,255,0) 32%);
+  transform: translateX(-140%);
+  animation: arcade-sheen .9s ease-out .06s forwards;
+  pointer-events:none;
+}
+
+@keyframes arcade-pop{
+  0% { transform: scale(1); }
+  70%{ transform: scale(1.08); }
+  100%{ transform: scale(1); }
+}
+@keyframes arcade-glow{
+  0%   { box-shadow: 0 0 0 rgba(0,0,0,0); }
+  45%  { box-shadow: 0 0 18px rgba(255,61,247,.25), 0 0 32px rgba(58,245,217,.18) inset; }
+  100% { box-shadow: 0 0 0 rgba(0,0,0,0); }
+}
+@keyframes arcade-spin{
+  from { transform: rotate(0deg) scale(1.02); }
+  to   { transform: rotate(120deg) scale(1); }
+}
+@keyframes arcade-sheen{
+  to { transform: translateX(140%); }
+}
 @media (max-width: 600px) {
   .card, .placeholder { width: 80px; height: 138px; }
   .card p { font-size: 10px; }
@@ -329,6 +412,66 @@
   .panel-table, .panel-claim { grid-column: 1 / -1; }  /* <— ensures stacking */
 }
 .hidden { display: none !important; }
+@property --spin { syntax: "<angle>"; inherits: false; initial-value: 0deg; }
+
+/* Base look for the payout chip */
+#payoutTotal{
+  display: inline-block;
+  padding: 6px 10px;
+  border-radius: 12px;
+  position: relative;
+  background: #0f1425;
+  border: 1px solid rgba(58,245,217,.35);
+  transition: transform .15s ease, box-shadow .15s ease, filter .15s ease;
+}
+
+/* Win pulse: rainbow border + neon glow + bounce */
+#payoutTotal.payout-pulse{
+  border: 2px solid transparent;
+  background:
+    linear-gradient(#0f1425, #0f1425) padding-box,
+    conic-gradient(from var(--spin),
+      #00ffc6, #ffcc00, #ff3df7, #6ae3ff, #00ffc6) border-box;
+  color: #ffffff;
+  text-shadow:
+    0 0 6px #00ffc6,
+    0 0 10px #ff3df7,
+    0 0 16px #ffcc00;
+  box-shadow:
+    0 0 18px rgba(0,255,198,.35),
+    0 0 28px rgba(255,61,247,.25),
+    0 0 40px rgba(255,204,0,.18);
+  animation:
+    payoutBounce .9s cubic-bezier(.2,1.4,.2,1) 1,
+    payoutGlow .9s ease-out 1,
+    payoutSpin 1.2s linear 1;
+  will-change: transform, box-shadow, filter;
+}
+
+@keyframes payoutBounce{
+  0%   { transform: scale(1); }
+  35%  { transform: scale(1.18) rotate(-0.8deg); }
+  65%  { transform: scale(1.10) rotate(0.6deg); }
+  100% { transform: scale(1); }
+}
+
+@keyframes payoutGlow{
+  0%   { filter: saturate(1) brightness(1); }
+  40%  { filter: saturate(1.6) brightness(1.25); }
+  100% { filter: saturate(1) brightness(1); }
+}
+
+@keyframes payoutSpin{
+  to { --spin: 360deg; }
+}
+
+/* Respect reduced motion */
+@media (prefers-reduced-motion: reduce){
+  #payoutTotal.payout-pulse{
+    animation: none;
+    box-shadow: 0 0 18px rgba(0,255,198,.35);
+  }
+}
 
 
     </style>
@@ -528,14 +671,13 @@
     <p class="readout">Tap a card to keep it for the draw.</p>
     <a class="btn btn-ghost" href="achievements.html">Achievements</a>
      <a class="btn btn-ghost" href="pointstable.html">Point Table</Table></a>
-     
+     <p id="payoutTotal">Total Payout: 0 KIBL</p>
   </div>
 
   <!-- RIGHT SIDEBAR: TOTAL + CLAIM + DAILY -->
   <div class="panel panel-claim">
     <div class="controls">
       <button id="dailyReward" class="btn btn-ghost">Claim Daily Reward</button>
-      <p id="payoutTotal">Total Payout: 0 KIBL</p>
       <div class="panel" id="leaderboardPanel">
   <h2>Season Points Window (Skill Points)</h2>
   <ol id="leaderboardList" class="leaderboard"></ol>
@@ -707,7 +849,89 @@ function postWithCsrf(input, init = {}) {
     // light haptic on mobile (best-effort)
     if (navigator.vibrate) { navigator.vibrate(20); }
   }
+function flashPayout(){
+  if (!payoutEl) return;
+  // retrigger the one-shot animation reliably
+  payoutEl.classList.remove('payout-win');
+  // force reflow
+  void payoutEl.offsetWidth;
+  payoutEl.classList.add('payout-win');
+  // clean up after the glow ends
+  setTimeout(() => payoutEl?.classList.remove('payout-win'), 1400);
+}
 
+function confettiBurst(count = 48, ms = 1800){
+  const wrap = document.createElement('div');
+  wrap.className = 'fx-confetti';
+  document.body.appendChild(wrap);
+  for (let i=0;i<count;i++){
+    const s = document.createElement('i');
+    s.style.setProperty('--x', `${Math.random()*100}%`);
+    s.style.setProperty('--rot', `${Math.random()*360}deg`);
+    s.style.setProperty('--dur', `${1000 + Math.random()*700}ms`);
+    wrap.appendChild(s);
+  }
+  setTimeout(()=> wrap.remove(), ms + 300);
+}
+// --- Size/fit controls ---
+const sizeSlider = document.getElementById('bjSize');
+const fitBtn     = document.getElementById('bjFit');
+
+function applyScaleFromSlider(){
+  const v = Math.max(80, Math.min(125, Number(sizeSlider?.value||100)));
+  const scale = v / 100;
+  document.documentElement.style.setProperty('--ui-scale', String(scale));
+  try { localStorage.setItem('kk_bj_scale', String(v)); } catch {}
+}
+
+// Compute a base card width that fits the widest row we can see
+function fitBjToScreen(){
+  const panel = document.getElementById('bjPanel');
+  if (!panel) return;
+
+  const gap = parseFloat(getComputedStyle(document.documentElement)
+               .getPropertyValue('--hand-gap') || '10') || 10;
+
+  // How many cards in the widest visible row?
+  const dealerCount = document.querySelectorAll('#bjDealer .card').length || 2;
+  const rowCounts = Array.from(document.querySelectorAll('#bjPlayer .hand-row'))
+                    .map(r => r.querySelectorAll('.card, .placeholder').length);
+  const n = Math.max(dealerCount, ...(rowCounts.length ? rowCounts : [2]));
+
+  // Available width inside the table panel (minus a little padding)
+  const available = panel.clientWidth - 32;
+  const perCard = (available - gap * (n - 1)) / n;
+
+  // Clamp so it always looks nice
+  const base = Math.max(64, Math.min(perCard, 136)); // px
+  document.documentElement.style.setProperty('--cardBaseW', base + 'px');
+}
+
+function initBjSizeUI(){
+  // Restore saved scale
+  try {
+    const saved = Number(localStorage.getItem('kk_bj_scale'));
+    if (sizeSlider && saved) sizeSlider.value = saved;
+  } catch {}
+  applyScaleFromSlider();
+  fitBjToScreen();
+
+  sizeSlider?.addEventListener('input', applyScaleFromSlider);
+  fitBtn?.addEventListener('click', fitBjToScreen);
+
+  // Re-fit on window resize
+  window.addEventListener('resize', fitBjToScreen);
+
+  // Re-fit whenever hands change (hit/stand/split/double)
+  const player = document.getElementById('bjPlayer');
+  const dealer = document.getElementById('bjDealer');
+  const mo = new MutationObserver(fitBjToScreen);
+  if (player) mo.observe(player, { childList:true, subtree:true });
+  if (dealer) mo.observe(dealer, { childList:true, subtree:true });
+}
+
+// Call once when the page boots (after DOM ready)
+initBjSizeUI();
 
   
   
@@ -982,6 +1206,7 @@ async function startGame() {
       cardDiv.appendChild(holdButton);
       if (held[index]) cardDiv.classList.add('held');
       handContainer.appendChild(cardDiv);
+      fitBjToScreen();
     });
   }
 
@@ -1039,6 +1264,7 @@ async function draw() {
     await nextPaint();
     await waitForImagesDecoded(handContainer);
     await sleep(REVEAL_EXTRA_MS);
+    fitBjToScreen();
     if (data.bonuses?.length) {
       const lines = data.bonuses
     .map(b => `• ${Math.floor((b.amount || 0) / 100)} KIBL — ${b.name}`)
@@ -1047,7 +1273,19 @@ async function draw() {
       }
 
     if (creditUnits > 0) {
-      toast(`You won <strong>${creditUnits}</strong> KIBL!`, { type: 'win', timeout: 1200 });
+      // Sound: restart and play (user gesture already happened)
+    const sfx = document.getElementById('feedSound');
+    if (sfx) { try { sfx.currentTime = 0; sfx.volume = 0.6; sfx.play().catch(()=>{}); } catch(_){} }
+       flashPayout();
+
+  // 🎉 optional quick confetti burst (comment out if you prefer)
+  confettiBurst();
+    // Haptic (best-effort on mobile)
+    if (navigator.vibrate) { navigator.vibrate([10, 40, 10]); }
+
+    // Pulse the payout readout
+    payoutEl.classList.add('payout-pulse');
+    setTimeout(() => payoutEl.classList.remove('payout-pulse'), 1900);
     }
     // Fetch profile/leaderboard AFTER the user sees cards + alerts
     // (non-blocking for snappier UX)

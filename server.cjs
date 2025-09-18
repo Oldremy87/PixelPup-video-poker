@@ -14,7 +14,7 @@ const PgSession = require('connect-pg-simple')(session);
 const {randomBytes, createHash, randomUUID } = require('crypto');
 
 const app = express();
-app.set('trust proxy', 1);
+app.set('trust proxy', true);
 
 // ----- ENV / MODE -----
 const isProd = process.env.NODE_ENV === 'production' || !!process.env.RENDER;
@@ -156,6 +156,8 @@ function getClientIp(req){
   const xf = (req.headers['x-forwarded-for'] || '').split(',')[0].trim();
   const raw = xf || req.socket?.remoteAddress || req.ip || 'unknown';
   return raw === '::1' ? '127.0.0.1' : raw;
+   const ip = (req.ips && req.ips.length ? req.ips[0] : req.ip) || '';
+  return ip.startsWith('::ffff:') ? ip.slice(7) : ip;
 }
 
 // =================== Security headers ===================
@@ -307,6 +309,22 @@ app.get('/api/profile', async (req, res) => {
     return res.status(500).json({ ok: false, error: 'profile_error' });
   }
 });
+
+function getClientIp(req) {
+  // If trust proxy is on, Express populates req.ips (left-most=client)
+  let ip = (req.ips && req.ips.length ? req.ips[0] : '')
+        || (req.headers['x-forwarded-for'] || '').split(',')[0].trim()
+        || req.ip
+        || req.socket?.remoteAddress
+        || '';
+
+  // Normalize IPv6/localhost variants
+  if (ip === '::1' || ip === '::ffff:127.0.0.1') return '127.0.0.1';
+  if (ip.startsWith('::ffff:')) ip = ip.slice(7);
+  return ip;
+}
+
+
 // hash-stream PRNG (deterministic, verifiable)
 const sha256hex = (s) => createHash('sha256').update(String(s)).digest('hex');
 const randHex = (n = 32) => randomBytes(n).toString('hex');
@@ -318,28 +336,6 @@ function* hashStream(seedHex) {
     const u32 = parseInt(h.slice(0, 8), 16) >>> 0;
     yield u32 / 0xffffffff;
   }
-}
-function announceAndRefresh(d){
-  const creditUnits  = Math.floor((d.credit || 0) / 100);
-  const balanceUnits = Math.floor((d.sessionBalance || 0) / 100);
-
-  if (d.bonuses?.length) {
-    const lines = d.bonuses
-      .map(b => `• ${Math.floor((b.amount || 0) / 100)} KIBL — ${b.name}`)
-      .join('<br>');
-    toast(`<strong>Bonuses unlocked</strong><br>${lines}`, { type: 'bonus', timeout: 1500 });
-  }
-  if (creditUnits > 0) {
-    toast(`You won <strong>${creditUnits}</strong> KIBL!`, { type: 'win', timeout: 1500 });
-  }
-
-  payoutEl.textContent = `Total Payout: ${balanceUnits} KIBL`;
-  totalPayout = balanceUnits;
-  payoutBtn.disabled = (totalPayout === 0);
-
-  // Always refresh profile + leaderboard so numbers are current
-  loadProfile();
-  loadLeaderboard();
 }
 // Fisher–Yates with a provided random stream
 function shuffleDeterministic(deck, rng) {
@@ -633,28 +629,62 @@ function evalHand(hand) {
   }
   return { payout, isWin: payout>0, isRoyal: royal };
 }
-function gateStartHand(req, game = 'poker'){
-  const ip = getClientIp(req);
-  const now = Date.now();
 
-  let rec = handsByIp.get(ip);
-  if (!rec || (now - rec.windowStart) >= WINDOW_MS) {
-    rec = { windowStart: now, counts: { poker:0, blackjack:0 } };
-  }
+
+const handsByActor = new Map(); // `${uid}@${ip}`
+
+
+function touch(rec, now) {
+  return (!rec || (now - rec.windowStart) >= WINDOW_MS)
+    ? { windowStart: now, counts: { poker: 0, blackjack: 0 } }
+    : rec;
+}
+
+function gateStartHand(req, game = 'poker') {
+  const now = Date.now();
+  const ip  = getClientIp(req) || 'unknown';
+  const uid = req.uid || 'nouid';
+  const key = `${uid}@${ip}`;
 
   const limit = (game === 'blackjack') ? HANDS_LIMIT_BJ : HANDS_LIMIT_POKER;
-  const used  = rec.counts[game] || 0;
 
-  if (used >= limit) {
-    const retryMs = Math.max(0, WINDOW_MS - (now - rec.windowStart));
-    return { ok:false, error:'ip_limit', retryMs, limit };
+  const perActor = touch(handsByActor.get(key), now);
+  const perIp    = touch(handsByIp.get(ip), now);
+
+  const usedActor = perActor.counts[game] || 0;
+  const usedIp    = perIp.counts[game]    || 0;
+
+  if (usedActor >= limit || usedIp >= limit) {
+    const started = Math.min(perActor.windowStart, perIp.windowStart);
+    const retryMs = Math.max(0, WINDOW_MS - (now - started));
+    return { ok: false, error: 'ip_limit', retryMs, limit };
   }
 
-  rec.counts[game] = used + 1;
-  handsByIp.set(ip, rec);
+  perActor.counts[game] = usedActor + 1;
+  perIp.counts[game]    = usedIp + 1;
 
-  return { ok:true, remaining: Math.max(0, limit - rec.counts[game]), windowMs: WINDOW_MS };
+  handsByActor.set(key, perActor);
+  handsByIp.set(ip, perIp);
+
+  const remaining = Math.max(0, limit - Math.max(perActor.counts[game], perIp.counts[game]));
+  return { ok: true, remaining, windowMs: WINDOW_MS };
 }
+
+// housecleaning
+setInterval(() => {
+  const now = Date.now();
+  for (const [k, rec] of handsByActor) {
+    if (now - rec.windowStart >= WINDOW_MS) handsByActor.delete(k);
+  }
+  
+}, 6 * 60 * 1000);
+setInterval(() => {
+  const now = Date.now();
+  for (const [ip, record] of handsByIp) {
+    if (now - record.windowStart >= SIX_HOURS_MS) handsByIp.delete(ip);
+  }
+}, 6 * 60 * 1000);
+
 
 const drawLimiter = rateLimit({ windowMs: 60 * 1000, max: 60, standardHeaders: true, legacyHeaders: false });
 const dealLimiter = rateLimit({ windowMs: 60 * 1000, max: 40, standardHeaders: true, legacyHeaders: false });
@@ -1186,112 +1216,6 @@ app.post('/api/payout', async (req, res) => {
 });
 
 // =================== BLACKJACK ENGINE (non-wagering, points-driven) ===================
-// ---- Blackjack achievements (KIBL amounts) ----
-const BJ_FIRST_WIN_KIBL   = Number(process.env.BJ_FIRST_WIN_KIBL   || 100);
-const BJ_W10_KIBL         = Number(process.env.BJ_W10_KIBL         || 1000);
-const BJ_W25_KIBL         = Number(process.env.BJ_W25_KIBL         || 2500);
-const BJ_W50_KIBL         = Number(process.env.BJ_W50_KIBL         || 5000);
-const BJ_NATURAL_KIBL     = Number(process.env.BJ_NATURAL_KIBL     || 1000);
-const BJ_DOUBLE_WIN_KIBL  = Number(process.env.BJ_DOUBLE_WIN_KIBL  || 300);
-const BJ_SPLIT_WIN_KIBL   = Number(process.env.BJ_SPLIT_WIN_KIBL   || 300);
-async function claimAndAwardBJ(req, round, results, { points, creditMinor, bonuses, natBjCount }) {
-  // 1) Atomically claim at DB so only ONE process awards this hand.
-  let claimed = false;
-  try {
-    const p = await db();
-    const { rowCount } = await p.query(
-      `UPDATE fair_rounds
-         SET awarded = true, awarded_at = now()
-       WHERE hand_id = $1 AND awarded IS NOT TRUE`,
-      [round.handId]
-    );
-    claimed = (rowCount === 1);
-
-    if (claimed) {
-      // Optional: extra audit barrier
-      await p.query(
-        `INSERT INTO bj_awards (hand_id, user_id, points, credit_minor)
-         VALUES ($1,$2,$3,$4)
-         ON CONFLICT (hand_id) DO NOTHING`,
-        [round.handId, req.uid, points, creditMinor + (bonuses?.reduce((s,b)=>s+(b.amount||0),0) || 0)]
-      );
-    }
-  } catch (e) {
-    // If DB is flaky, do NOT double award – just refuse for now.
-    claimed = false;
-  }
-
-  if (!claimed) {
-    // Someone already awarded this hand (or DB issue) → return snapshot only.
-    return { awarded: false };
-  }
-
-  // 2) Actually credit once (session + DB), then mark in-memory.
-  const toInt = v => Math.floor(Number(v)||0);
-  const extraMinor = toInt(bonuses?.reduce((s,b)=>s+(b.amount||0),0) || 0);
-  const roundMinor = Math.max(0, toInt(creditMinor) + extraMinor);
-
-  const cap = Math.floor(Number(process.env.BANK_CAP ?? 5_000_000));
-  req.session.wallet.blackjack = Math.max(0, toInt(req.session.wallet.blackjack || 0) + roundMinor);
-  req.session.bank = Math.min(
-    cap,
-    toInt(req.session.wallet.poker || 0) + toInt(req.session.wallet.blackjack || 0)
-  );
-
-  await getOrCreateUser(req.uid);
-  const bjFlags = [];
-  if ((results || []).some(x => x.result === 'win' || x.result === 'bj')) bjFlags.push('first_win');
-  if (natBjCount > 0) bjFlags.push('bj_natural');
-
-  await saveStatsFor(req.uid, 'blackjack', {
-    creditMinor: roundMinor,
-    isWin: roundMinor > 0,
-    isRoyal: false,
-    flags: bjFlags
-  });
-  await awardSeasonPointsFor(req.uid, 'blackjack', points);
-
-  // (best effort) update blackjacks count
-  if (natBjCount > 0 && hasDb) {
-    try {
-      const p = await db();
-      await p.query(
-        'update user_stats_blackjack set blackjacks = blackjacks + $2, last_seen_at = now() where user_id = $1',
-        [req.uid, natBjCount]
-      );
-    } catch {}
-  }
-
-  // Reveal fairness (best-effort, once)
-  let fair = null;
-  if (!round.revealed) {
-    fair = {
-      handId: round.handId,
-      commit: round.commit,
-      serverSeed: round.serverSeed,
-      clientSeed: round.clientSeed || null,
-      algo: "FY+hashStream sha256(serverSeed:clientSeed:handId:bj)"
-    };
-    round.revealed = true;
-    try {
-      const p = await db();
-      await p.query(
-        `UPDATE fair_rounds SET server_seed=$2, revealed_at=now() WHERE hand_id=$1`,
-        [round.handId, round.serverSeed]
-      );
-    } catch {}
-  }
-
-  // in-memory idempotency within this process
-  round._rewarded = true;
-
-  return {
-    awarded: true,
-    roundMinor,
-    fair
-  };
-}
-
 
 function bjEnsure(req){
   ensureBank(req);
@@ -1316,9 +1240,18 @@ function scoreHand(cards){
 }
 function isBlackjack(cards){ return cards.length===2 && scoreHand(cards).total===21; }
 function drawCard(round){ return round.deck[round.deckPos++]; }
+// OLD
+// function canSplit(cards){ return (cards?.length===2) && (cards[0].rank===cards[1].rank); }
+
+// NEW
 function canSplit(cards){
-  return (cards?.length===2) && (cards[0].rank===cards[1].rank);
+  if (!cards || cards.length !== 2) return false;
+  const a = cards[0].rank, b = cards[1].rank;
+  if (a === b) return true; // exact pair
+  const tenVals = new Set(['10','Jack','Queen','King']);
+  return tenVals.has(a) && tenVals.has(b); // any two 10-value cards
 }
+
 // ===== BLACKJACK RULES (tweakable) =====
 const ALLOW_DOUBLE_AFTER_SPLIT = false;     // common default: DAS off
 const SPLIT_ACES_ONE_CARD_ONLY = true;      // common default: one card to each Ace, no hits
@@ -1423,69 +1356,102 @@ function settleAndRewardBJ(req, r){
   const bonuses = [];
   return { points, creditMinor, bonuses, results };
 }
+async function claimAndAwardBJ(
+  req,
+  round,
+  results,
+  { points = 0, creditMinor = 0, bonuses = [], natBjCount = 0 } = {}
+) {
+  // in-process guard
+  if (!round || round._rewarded) return { awarded: false, roundMinor: 0, fair: null };
+
+  const toInt = v => Math.floor(Number(v) || 0);
+  const extraMinor = toInt((bonuses || []).reduce((s, b) => s + toInt(b.amount || 0), 0));
+  const roundMinor = Math.max(0, toInt(creditMinor) + extraMinor);
+
+  // Try to claim exactly once via DB (best-effort).
+  // Expect a UNIQUE constraint on bj_awards.hand_id.
+  let claimed = true;
+  if (hasDb) {
+    try {
+      const p = await db();
+      await getOrCreateUser(req.uid);
+      const { rowCount } = await p.query(
+        `INSERT INTO bj_awards (hand_id, user_id, points, credit_minor)
+         VALUES ($1,$2,$3,$4)
+         ON CONFLICT (hand_id) DO NOTHING`,
+        [round.handId, req.uid, toInt(points), roundMinor]
+      );
+      claimed = (rowCount === 1);
+    } catch {
+      // If bj_awards table is missing or DB hiccups, fall back to in-memory claim.
+      claimed = true;
+    }
+  }
+  if (!claimed) return { awarded: false, roundMinor: 0, fair: null };
+
+  // Credit session wallet (minor units)
+  const cap = Math.floor(Number(process.env.BANK_CAP ?? 5_000_000));
+  req.session.wallet.blackjack = Math.max(0, toInt(req.session.wallet.blackjack || 0) + roundMinor);
+  req.session.bank = Math.min(
+    cap,
+    toInt(req.session.wallet.poker || 0) + toInt(req.session.wallet.blackjack || 0)
+  );
+
+  // Stats + achievements + season points
+  const bjFlags = [];
+  if ((results || []).some(x => x.result === 'win' || x.result === 'bj')) bjFlags.push('first_win');
+  if (natBjCount > 0) bjFlags.push('bj_natural');
+
+  await saveStatsFor(req.uid, 'blackjack', {
+    creditMinor: roundMinor,
+    isWin: roundMinor > 0,
+    isRoyal: false,
+    flags: bjFlags
+  });
+  await awardSeasonPointsFor(req.uid, 'blackjack', toInt(points));
+
+  // (best-effort) increment natural BJ counter
+  if (natBjCount > 0 && hasDb) {
+    try {
+      const p = await db();
+      await p.query(
+        'UPDATE user_stats_blackjack SET blackjacks = blackjacks + $2, last_seen_at = now() WHERE user_id = $1',
+        [req.uid, natBjCount]
+      );
+    } catch {}
+  }
+
+  // Best-effort fairness reveal (only once)
+  let fair = null;
+  if (!round.revealed) {
+    fair = {
+      handId: round.handId,
+      commit: round.commit,
+      serverSeed: round.serverSeed,
+      clientSeed: round.clientSeed || null,
+      algo: "FY+hashStream sha256(serverSeed:clientSeed:handId:bj)"
+    };
+    round.revealed = true;
+    if (hasDb) {
+      try {
+        const p = await db();
+        await p.query(
+          'UPDATE fair_rounds SET server_seed=$2, revealed_at=now() WHERE hand_id=$1',
+          [round.handId, round.serverSeed]
+        );
+      } catch {}
+    }
+  }
+
+  round._rewarded = true;
+  return { awarded: true, roundMinor, fair };
+}
+
 
 // ---- Rate limits for BJ actions
 const bjStartLimiter  = rateLimit({ windowMs: 60_000, max: 40, standardHeaders:true, legacyHeaders:false });
 const bjActionLimiter = rateLimit({ windowMs: 60_000, max: 80, standardHeaders:true, legacyHeaders:false });
-function setBJButtons({ deal, hit, stand } = {}) {
-  const dealBtn  = document.getElementById('bjDealBtn');
-  const hitBtn   = document.getElementById('bjHitBtn');
-  const standBtn = document.getElementById('bjStandBtn');
-  if (dealBtn  != null && deal  !== undefined) dealBtn.disabled  = !deal;
-  if (hitBtn   != null && hit   !== undefined) hitBtn.disabled   = !hit;
-  if (standBtn != null && stand !== undefined) standBtn.disabled = !stand;
-}
-
-async function postBJ(path, payload = {}) {
-  const res = await fetch(path, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'CSRF-Token': window.csrfToken || '' },
-    body: JSON.stringify(payload)
-  });
-  const json = await res.json().catch(() => null);
-  if (!res.ok || !json?.ok) {
-    const code = json?.error || `HTTP ${res.status}`;
-    throw new Error(code);
-  }
-  return json;
-}
-
-async function hit() {
-  try {
-    setBJButtons({ hit:false, stand:false });
-    const data = await postBJ('/api/bj/hit');            // <-- define `data` here
-    afterActionSnapshot(data);
-  } catch (err) {
-    // Treat already-settled as “ready to deal”
-    if (err.message === 'hand_settled' || err.message === 'no_round') {
-      setBJButtons({ deal:true, hit:false, stand:false });
-    }
-    toast(`Hit failed: ${err.message}`, { type: 'error' });
-  }
-}
-
-async function stand() {
-  try {
-    setBJButtons({ hit:false, stand:false });
-    const data = await postBJ('/api/bj/stand');          // <-- define `data` here
-    afterActionSnapshot(data);
-  } catch (err) {
-    if (err.message === 'hand_settled' || err.message === 'no_round') {
-      setBJButtons({ deal:true, hit:false, stand:false });
-    }
-    toast(`Stand failed: ${err.message}`, { type: 'error' });
-  }
-}
-
-function afterActionSnapshot(data) {
-  // ... update cards/totals ...
-  if (data.settled) {
-    setBJButtons({ deal:true, hit:false, stand:false });
-    // optionally show a toast for winnings/bonuses here
-  } else {
-    setBJButtons({ deal:false, hit:true, stand:true });
-  }
-}
 
 
 // ---- /api/bj/start
@@ -1523,209 +1489,469 @@ app.post('/api/bj/start', bjStartLimiter, async (req, res) => {
       handId, commit:commitHash, serverSeed, clientSeed, revealed:false,
       deck, deckPos:0,
       dealer: [], players: [{ cards:[], settled:false, result:null, doubled:false, splitFrom:false }],
-      activeIndex: 0, settled:false, rewarded: false
+      activeIndex: 0, settled:false
     };
     // deal P,D,P,D
     round.players[0].cards.push(drawCard(round));
     round.dealer.push(drawCard(round));
     round.players[0].cards.push(drawCard(round));
     round.dealer.push(drawCard(round));
+     req.session.bj.round = round;
 
-    req.session.bj.round = round;
-   
-        
-    return res.json({
-      ok:true,
-      fair:{ handId, commit:commitHash },
-      settled: round.settled,
-      dealer:{ up: round.dealer[0], holeHidden:true },
-      player: round.players[0].cards,
-      can:{ hit:true, stand:true, double:true, split: canSplit(round.players[0].cards) }
-    });
-  } catch(e){
-    logger.error('bj/start', { e:String(e) });
+    const pTotal = scoreHand(round.players[0].cards).total;
+    if (pTotal === 21) {
+      const h = round.players[0];
+      h.result = 'bj';
+      h.settled = true;
+      advanceOrSettle(round);
+
+      const tally = settleAndRewardBJ(req, round);
+      const natBjCount = 1;
+      const claim = await claimAndAwardBJ(req, round, tally.results, { ...tally, natBjCount });
+
+      return res.json({
+        ok: true,
+        fair: { handId, commit: commitHash },
+        settled: true,
+        dealer: { up: round.dealer[0], hole: round.dealer[1], full: round.dealer },
+        players: snapshotPlayers(round),
+        results: tally.results,
+        credit: claim.awarded ? claim.roundMinor : 0,
+        sessionBalance: req.session.bank,
+        points: Math.floor(tally.points || 0),
+        bonuses: tally.bonuses || [],
+        fairReveal: claim.fair || null,
+        can: { hit:false, stand:false, double:false, split:false }
+      });
+    } else {
+      // Normal start path
+      return res.json({
+        ok: true,
+        fair: { handId, commit: commitHash },
+        settled: false,
+        dealer: { up: round.dealer[0], holeHidden: true },
+        player: round.players[0].cards,                  // (your client expects `player` on start)
+        can: {
+          hit: true,
+          stand: true,
+          double: true,
+          split: canSplit(round.players[0].cards)
+        }
+      });
+    }
+  } catch (e) {
+    logger.error('bj/start', { e: String(e) });
     return res.status(500).json({ ok:false, error:'bj_start_error' });
   }
 });
 
 // ---- /api/bj/hit
-app.post('/api/bj/hit', bjActionLimiter, (req, res) => {
-  try{
+app.post('/api/bj/hit', bjActionLimiter, async (req, res) => {
+  try {
     bjEnsure(req);
-     const r = req.session?.bj?.round;
-    if (!r)            return res.status(400).json({ ok:false, error:'no_round' });
+    const r = req.session?.bj?.round;
+    if (!r) return res.status(400).json({ ok:false, error:'no_round' });
+
     const h = r.players[r.activeIndex];
     if (!h || h.settled) return res.status(400).json({ ok:false, error:'hand_settled' });
-     
+
+    // Draw a card
     h.cards.push(drawCard(r));
-    if (scoreHand(h.cards).total > 21){ h.result='bust'; h.settled=true; }
+    const s = scoreHand(h.cards);
+
+    if (s.total > 21) {
+      h.result = 'bust';
+      h.settled = true;
+    } else if (s.total === 21) {
+      // Auto-stand on 21
+      h.settled = true;
+    }
+
     advanceOrSettle(r);
 
+    // If the whole round is now settled, award here (idempotent)
+    if (r.settled) {
+      if (!r._rewarded) {
+        const tally = settleAndRewardBJ(req, r);
+        const claim = await claimAndAwardBJ(req, r, tally.results, tally);
+
+        return res.json({
+          ok: true,
+          dealer: { up:r.dealer[0], hole:r.dealer[1], full:r.dealer },
+          players: snapshotPlayers(r),
+          activeIndex: r.activeIndex,
+          settled: true,
+          results: claim.awarded ? tally.results : [],
+          credit: claim.awarded ? claim.roundMinor : 0,
+          sessionBalance: req.session.bank,
+          points: claim.awarded ? Math.floor(tally.points || 0) : 0,
+          bonuses: claim.awarded ? (tally.bonuses || []) : [],
+          fair: claim.fair || null
+        });
+      }
+      // already rewarded in this process — snapshot only
+      return res.json({
+        ok: true,
+        dealer: { up:r.dealer[0], hole:r.dealer[1], full:r.dealer },
+        players: snapshotPlayers(r),
+        activeIndex: r.activeIndex,
+        settled: true
+      });
+    }
+
+    // Not settled yet → normal snapshot
     return res.json({
       ok:true,
-      dealer: r.settled ? { up:r.dealer[0], hole:r.dealer[1], full:r.dealer } : { up:r.dealer[0], holeHidden:true },
+      dealer: { up:r.dealer[0], holeHidden:true },
       players: snapshotPlayers(r),
       activeIndex: r.activeIndex,
-      settled: r.settled
+      settled: false
     });
-  } catch(e){
+  } catch (e) {
     logger.error('bj/hit', { e:String(e) });
     return res.status(500).json({ ok:false, error:'bj_hit_error' });
   }
 });
 
-// ---- /api/bj/stand (idempotent, race-safe) ----
+
+// ---- /api/bj/stand
 app.post('/api/bj/stand', bjActionLimiter, async (req, res) => {
   try {
     bjEnsure(req);
     const r = req.session?.bj?.round;
-    if (!r) return res.status(400).json({ ok: false, error: 'no_round' });
+    if (!r) return res.status(400).json({ ok:false, error:'no_round' });
 
-    // If we've already rewarded this hand in this process, just return a stable snapshot.
-    if (r._rewarded) {
-      return res.json({
-        ok: true,
-        settled: true,
-        dealer:  { up: r.dealer[0], hole: r.dealer[1], full: r.dealer },
-        players: snapshotPlayers(r),
-        results: [],
-        credit: 0,
-        sessionBalance: req.session.bank,
-        points: 0,
-        bonuses: [],
-        fair: null
-      });
+    // If it's already settled (e.g., natural BJ on the deal) we may still need to award.
+    if (r.settled) {
+      // If not rewarded yet, do ONE award pass now.
+      if (!r._rewarded) {
+        const { points, creditMinor, bonuses, results } = settleAndRewardBJ(req, r);
+
+        // ---- Achievements (only the ones you want right now) ----
+        const toMinor = kibl => Math.max(0, Math.floor(Number(kibl || 0) * 100));
+        let extraMinor = 0;
+        const bjBonuses = [];   // [{ name, amount }]
+        const bjFlags   = [];   // ['first_win','bj_natural', ...]
+        const A = (req.session.bj.achievements ||= {});
+        const winsThisRound = results.filter(x => x.result === 'win' || x.result === 'bj').length;
+        if (winsThisRound > 0) bjFlags.push('first_win');
+        function unlock(flag, name, kibl){
+          if (!A[flag]) {
+            A[flag] = true;
+            const amt = toMinor(kibl);
+            if (amt > 0) { extraMinor += amt; bjBonuses.push({ name, amount: amt }); }
+            bjFlags.push(flag);
+          }
+        }
+        
+      
+
+        // ---- Deposit to blackjack wallet (base + bonus) ----
+        const roundMinor = Math.max(0, (creditMinor || 0) + (extraMinor || 0));
+        const cap = Math.floor(Number(process.env.BANK_CAP ?? 5_000_000));
+        req.session.wallet.blackjack = Math.max(
+          0,
+          Math.floor(Number(req.session.wallet.blackjack || 0)) + roundMinor
+        );
+        req.session.bank = Math.min(
+          cap,
+          Math.floor(Number(req.session.wallet.poker || 0)) +
+          Math.floor(Number(req.session.wallet.blackjack || 0))
+        );
+
+        // ---- Persist (best-effort) ----
+        await getOrCreateUser(req.uid);
+        await saveStatsFor(req.uid, 'blackjack', {
+          creditMinor: roundMinor,
+          isWin: roundMinor > 0,
+          isRoyal: false,
+          flags: bjFlags
+        });
+        await awardSeasonPointsFor(req.uid, 'blackjack', points);
+        if (natBjCount > 0 && hasDb) {
+          try {
+            const p = await db();
+            await p.query(
+              'update user_stats_blackjack set blackjacks = blackjacks + $2, last_seen_at = now() where user_id = $1',
+              [req.uid, natBjCount]
+            );
+          } catch (e) { logger.error('bj blackjacks increment', { e: String(e) }); }
+        }
+        
+        // Reveal fairness (best-effort)
+        let fair = null;
+        if (!r.revealed) {
+          fair = {
+            handId: r.handId,
+            commit: r.commit,
+            serverSeed: r.serverSeed,
+            clientSeed: r.clientSeed || null,
+            algo: "FY+hashStream sha256(serverSeed:clientSeed:handId:bj)"
+          };
+          r.revealed = true;
+          try {
+            const p = await db();
+            await p.query(
+              `UPDATE fair_rounds SET server_seed=$2, revealed_at=now() WHERE hand_id=$1`,
+              [r.handId, r.serverSeed]
+            );
+          } catch {}
+        }
+          // First win (per session) + natural BJ
+        if (winsThisRound > 0) {
+          req.session.bj.wins = (req.session.bj.wins || 0) + winsThisRound;
+          unlock('first_win',  'BJ First Win', Number(process.env.BJ_FIRST_WIN_KIBL || 100));
+        }
+       // Always mark DB 'first_win' when this round has any win (idempotent)
+        if (winsThisRound > 0) bjFlags.push('first_win');
+
+        return res.json({
+          ok: true,
+          settled: true,
+          dealer:  { up: r.dealer[0], hole: r.dealer[1], full: r.dealer },
+          players: snapshotPlayers(r),
+          results,
+          credit: roundMinor,
+          sessionBalance: req.session.bank,
+          points,
+          bonuses: [...bonuses, ...bjBonuses],
+          fair
+        });
+      }
     }
 
-    // If round not settled yet, mark current hand as stood and advance.
-    if (!r.settled) {
-      const h = r.players[r.activeIndex];
-      if (!h) return res.status(400).json({ ok: false, error: 'hand_settled' }); // defensive
-      h.settled = true;
-      advanceOrSettle(r);
-    }
+    // Not yet settled: finish and award once
+    r.players[r.activeIndex].settled = true;
+    advanceOrSettle(r);
 
-    // If still not settled (e.g., there is a second split hand to play), return snapshot.
     if (!r.settled) {
       return res.json({
-        ok: true,
-        settled: false,
-        dealer: { up: r.dealer[0], holeHidden: true },
+        ok:true,
+        settled:false,
+        dealer:{ up:r.dealer[0], holeHidden:true },
         players: snapshotPlayers(r),
         activeIndex: r.activeIndex
       });
     }
 
-    // Now the round is settled → compute tally once
-    const tally = settleAndRewardBJ(req, r);
-    // Try to claim+award exactly once
-    const claim = await claimAndAwardBJ(req, r, tally.results, tally);
+    // Now settled -> normal award path
+    const { points, creditMinor, bonuses, results } = settleAndRewardBJ(req, r);
 
-    // If not awarded (already claimed elsewhere/race), just return snapshot without new credit
-    if (!claim.awarded) {
-      return res.json({
-        ok: true,
-        settled: true,
-        dealer:  { up: r.dealer[0], hole: r.dealer[1], full: r.dealer },
-        players: snapshotPlayers(r),
-        results: [],                 // no fresh results to avoid double-UI toasts
-        credit: 0,
-        sessionBalance: req.session.bank,
-        points: 0,
-        bonuses: [],
-        fair: null
-      });
+    const toMinor = kibl => Math.max(0, Math.floor(Number(kibl || 0) * 100));
+    let extraMinor = 0;
+    const bjBonuses = [];
+    const bjFlags   = [];
+    const A = (req.session.bj.achievements ||= {});
+    const winsThisRound = results.filter(x => x.result === 'win' || x.result === 'bj').length;
+    if (winsThisRound > 0) {
+      req.session.bj.wins = (req.session.bj.wins || 0) + winsThisRound;
+      if (!A.first_win) { A.first_win = true; const amt = toMinor(Number(process.env.BJ_FIRST_WIN_KIBL || 100)); if (amt) { extraMinor += amt; bjBonuses.push({ name:'BJ First Win', amount:amt }); } bjFlags.push('first_win'); }
+    }
+    const natBjCount = results.filter(x => x.result === 'bj' && !x.splitFrom).length;
+    if (natBjCount > 0 && !A.bj_natural) {
+      A.bj_natural = true;
+      const amt = toMinor(Number(process.env.BJ_NATURAL_KIBL || 1000));
+      if (amt) { extraMinor += amt; bjBonuses.push({ name:'Natural Blackjack', amount:amt }); }
+      bjFlags.push('bj_natural');
     }
 
-    // Awarded successfully
+    const roundMinor = Math.max(0, (creditMinor || 0) + (extraMinor || 0));
+    const cap = Math.floor(Number(process.env.BANK_CAP ?? 5_000_000));
+    req.session.wallet.blackjack = Math.max(0, Math.floor(Number(req.session.wallet.blackjack || 0)) + roundMinor);
+    req.session.bank = Math.min(cap,
+      Math.floor(Number(req.session.wallet.poker || 0)) +
+      Math.floor(Number(req.session.wallet.blackjack || 0))
+    );
+
+    await getOrCreateUser(req.uid);
+    await saveStatsFor(req.uid, 'blackjack', {
+      creditMinor: roundMinor,
+      isWin: roundMinor > 0,
+      isRoyal: false,
+      flags: bjFlags
+    });
+    await awardSeasonPointsFor(req.uid, 'blackjack', points);
+    if (natBjCount > 0 && hasDb) {
+      try {
+        const p = await db();
+        await p.query(
+          'update user_stats_blackjack set blackjacks = blackjacks + $2, last_seen_at = now() where user_id = $1',
+          [req.uid, natBjCount]
+        );
+      } catch (e) { logger.error('bj blackjacks increment', { e: String(e) }); }
+    }
+
+    let fair = null;
+    if (!r.revealed) {
+      fair = {
+        handId: r.handId, commit: r.commit,
+        serverSeed: r.serverSeed, clientSeed: r.clientSeed || null,
+        algo: "FY+hashStream sha256(serverSeed:clientSeed:handId:bj)"
+      };
+      r.revealed = true;
+      try {
+        const p = await db();
+        await p.query(`UPDATE fair_rounds SET server_seed=$2, revealed_at=now() WHERE hand_id=$1`, [r.handId, r.serverSeed]);
+      } catch {}
+    }
+
+
     return res.json({
-      ok: true,
-      settled: true,
-      dealer:  { up: r.dealer[0], hole: r.dealer[1], full: r.dealer },
+      ok:true,
+      settled:true,
+      dealer:{ up:r.dealer[0], hole:r.dealer[1], full:r.dealer },
       players: snapshotPlayers(r),
-      results: tally.results,
-      credit: claim.roundMinor,          // minor units
-      sessionBalance: req.session.bank,  // minor units
-      points: Math.floor(tally.points || 0),
-      bonuses: tally.bonuses || [],
-      fair: claim.fair
+      results,
+      credit: roundMinor,
+      sessionBalance: req.session.bank,
+      points,
+      bonuses: [...bonuses, ...bjBonuses],
+      fair
     });
 
   } catch (e) {
     logger.error('bj/stand', { e: String(e) });
-    return res.status(500).json({ ok: false, error: 'bj_stand_error' });
+    return res.status(500).json({ ok:false, error:'bj_stand_error' });
   }
 });
 
-
-// ---- /api/bj/double (first decision only; draw 1, then hand settles)
-app.post('/api/bj/double', bjActionLimiter, (req, res) => {
-  try{
+// ---- /api/bj/double (first decision only; draw 1, then settle this hand; award once if round ends)
+app.post('/api/bj/double', bjActionLimiter, async (req, res) => {
+  try {
     bjEnsure(req);
     const r = req.session?.bj?.round;
-    if (!r || r.settled) return res.status(400).json({ ok:false, error:'no_round' });
+    if (!r) return res.status(400).json({ ok:false, error:'no_round' });
+
+    // If the round is already settled, just return a stable snapshot (idempotent)
+    if (r.settled || r._rewarded) {
+      return res.json({
+        ok: true,
+        dealer: { up:r.dealer[0], hole:r.dealer[1], full:r.dealer },
+        players: snapshotPlayers(r),
+        activeIndex: r.activeIndex,
+        settled: true
+      });
+    }
 
     const h = r.players[r.activeIndex];
-    if (!h || h.settled || h.doubled || h.cards.length!==2) return res.status(400).json({ ok:false, error:'cant_double' });
-    if (h.splitFrom && !ALLOW_DOUBLE_AFTER_SPLIT) return res.status(400).json({ ok:false, error:'cant_double_after_split' });
-     if (h.lockedAfterOne) return res.status(400).json({ ok:false, error:'cant_double_split_aces' });
-    const s = scoreHand(h.cards);
-     if (s.total >= 21) return res.status(400).json({ ok:false, error:'cant_double_on_21' });
+    if (!h || h.settled)               return res.status(400).json({ ok:false, error:'hand_settled' });
+    if (h.doubled)                      return res.status(400).json({ ok:false, error:'already_doubled' });
+    if (h.cards.length !== 2)           return res.status(400).json({ ok:false, error:'cant_double' });
+    if (h.splitFrom && !ALLOW_DOUBLE_AFTER_SPLIT)
+                                        return res.status(400).json({ ok:false, error:'cant_double_after_split' });
+    if (h.lockedAfterOne)               return res.status(400).json({ ok:false, error:'cant_double_split_aces' });
+
+    const s0 = scoreHand(h.cards);
+    if (s0.total >= 21)                 return res.status(400).json({ ok:false, error:'cant_double_on_21' });
+
+    // Perform the double: mark doubled, draw exactly one card, then hand is done.
     h.doubled = true;
     h.cards.push(drawCard(r));
-    if (scoreHand(h.cards).total > 21) { h.result='bust'; }
+
+    const s1 = scoreHand(h.cards);
+    if (s1.total > 21) h.result = 'bust';
     h.settled = true;
+
+    // Advance game; may or may not settle the whole round (e.g., split second hand)
     advanceOrSettle(r);
 
+    // If the round just settled, compute tally and award exactly once.
+    if (r.settled) {
+      const tally = settleAndRewardBJ(req, r);            // { points, creditMinor, bonuses, results }
+      const claim = await claimAndAwardBJ(
+        req, r, tally.results, { ...tally, natBjCount: 0 } // no natural BJ on a double
+      );
+
+      return res.json({
+        ok: true,
+        dealer: r.settled ? { up:r.dealer[0], hole:r.dealer[1], full:r.dealer } : { up:r.dealer[0], holeHidden:true },
+        players: snapshotPlayers(r),
+        activeIndex: r.activeIndex,
+        settled: true,
+        results: claim.awarded ? tally.results : [],
+        credit: claim.awarded ? claim.roundMinor : 0,      // minor units
+        sessionBalance: req.session.bank,                  // minor units
+        points: claim.awarded ? Math.floor(tally.points || 0) : 0,
+        bonuses: claim.awarded ? (tally.bonuses || []) : [],
+        fair: claim.fair || null
+      });
+    }
+
+    // Not fully settled yet — return snapshot so player can act on the next hand.
     return res.json({
-      ok:true,
-      dealer: r.settled ? { up:r.dealer[0], hole:r.dealer[1], full:r.dealer } : { up:r.dealer[0], holeHidden:true },
+      ok: true,
+      dealer: { up:r.dealer[0], holeHidden:true },
       players: snapshotPlayers(r),
       activeIndex: r.activeIndex,
-      settled: r.settled
+      settled: false
     });
-  } catch(e){
+
+  } catch (e) {
     logger.error('bj/double', { e:String(e) });
     return res.status(500).json({ ok:false, error:'bj_double_error' });
   }
 });
 
+
 // ---- /api/bj/split (one split v1; exact pair)
 app.post('/api/bj/split', bjActionLimiter, (req, res) => {
-  try{
+  try {
     bjEnsure(req);
     const r = req.session?.bj?.round;
-    if (!r || r.settled) return res.status(400).json({ ok:false, error:'no_round' });
+    if (!r)               return res.status(400).json({ ok:false, error:'no_round' });
+    if (r.settled)        return res.status(400).json({ ok:false, error:'hand_settled' });
 
-    const i = r.activeIndex;
+    const i = (typeof r.activeIndex === 'number') ? r.activeIndex : 0;
     const h = r.players[i];
-    if (!h || h.settled || h.cards.length!==2 || !canSplit(h.cards)) return res.status(400).json({ ok:false, error:'cant_split' });
-    if (r.players.some(p=>p.splitFrom)) return res.status(400).json({ ok:false, error:'one_split_only' });
+    if (!h || h.settled)  return res.status(400).json({ ok:false, error:'hand_settled' });
 
+    // must be a pair, exactly 2 cards
+    if (h.cards.length !== 2 || !canSplit(h.cards)) {
+      return res.status(400).json({ ok:false, error:'cant_split' });
+    }
+
+    // v1 policy: allow only one split total
+    if (r.players.some(p => p.splitFrom)) {
+      return res.status(400).json({ ok:false, error:'one_split_only' });
+    }
+
+    // perform split
     const a = h.cards[0], b = h.cards[1];
-    h.cards = [a]; h.splitFrom = true;
-    const h2 = { cards:[b], settled:false, result:null, doubled:false, splitFrom:true };
-    r.players.splice(i+1, 0, h2);
+    h.cards = [a];
+    h.splitFrom = true;
+    h.doubled = false;
+    delete h.lockedAfterOne;
 
-    // draw one to each
+    const h2 = { cards: [b], settled:false, result:null, doubled:false, splitFrom:true };
+
+    // insert new hand right after the current hand so play order is clear
+    r.players.splice(i + 1, 0, h2);
+
+    // draw one card to each split hand (guard against underflow)
+    if (r.deckPos + 2 > r.deck.length) {
+      return res.status(500).json({ ok:false, error:'deck_underflow' });
+    }
     h.cards.push(drawCard(r));
     h2.cards.push(drawCard(r));
 
-    // Split Aces rule: one card to each, no further hits/doubles
+    // Split Aces: one card only, no further hits/doubles on either hand
     if (SPLIT_ACES_ONE_CARD_ONLY && a.rank === 'Ace' && b.rank === 'Ace') {
-    h.lockedAfterOne = true;
-    h2.lockedAfterOne = true;
+      h.lockedAfterOne  = true;
+      h2.lockedAfterOne = true;
     }
 
+    // stay on the first split hand
+    r.activeIndex = i;
+
     return res.json({
-      ok:true,
-      dealer:{ up:r.dealer[0], holeHidden:true },
+      ok: true,
+      dealer: { up: r.dealer[0], holeHidden: true },
       players: snapshotPlayers(r),
       activeIndex: r.activeIndex,
-      settled:false
+      settled: r.settled
     });
-  } catch(e){
-    logger.error('bj/split', { e:String(e) });
+  } catch (e) {
+    logger.error('bj/split', { e: String(e) });
     return res.status(500).json({ ok:false, error:'bj_split_error' });
   }
 });
