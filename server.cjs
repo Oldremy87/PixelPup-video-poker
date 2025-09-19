@@ -229,6 +229,16 @@ app.use((req, res, next) => {
 app.get('/api/version', (_req,res)=> {
   res.json({ ok:true, commit: process.env.GIT_COMMIT || null, build: process.env.BUILD_ID || null });
 });
+app.use((req, _res, next) => {
+  logger.info('Incoming request', {
+    method: req.method, url: req.url,
+    ip: getClientIp(req),
+    uid: req.uid,
+    uaHash: uaHash(req),
+    ua: (req.headers['user-agent'] || '').slice(0,120)
+  });
+  next();
+});
 
 
 
@@ -240,7 +250,20 @@ const HANDS_LIMIT = Math.max(1, Number(process.env.IP_HANDS_PER_6H)) || 40;
 const HANDS_LIMIT_POKER = Number(process.env.IP_HANDS_PER_6H_POKER || HANDS_LIMIT);
 const HANDS_LIMIT_BJ    = Number(process.env.IP_HANDS_PER_6H_BJ    || HANDS_LIMIT);
 const WINDOW_MS   = 6 * 60 * 60 * 1000;
-const handsByIp   = new Map();
+const handsByUid = new Map(); // uid -> { windowStart, counts:{poker,bj} }
+const handsByIp  = new Map(); // ip  -> { windowStart, counts:{poker,bj} }
+const handsByUA  = new Map(); // uaHash -> { windowStart, counts:{poker,bj} } (optional)
+
+function touch(rec, now) {
+  return (!rec || (now - rec.windowStart) >= WINDOW_MS)
+    ? { windowStart: now, counts: { poker: 0, blackjack: 0 } }
+    : rec;
+}
+
+function uaHash(req) {
+  const ua = (req.headers['user-agent'] || '').slice(0, 200);
+  return createHash('sha256').update(ua).digest('hex').slice(0, 16);
+}
 
 
 setInterval(() => {
@@ -311,18 +334,18 @@ app.get('/api/profile', async (req, res) => {
 });
 
 function getClientIp(req) {
-  // If trust proxy is on, Express populates req.ips (left-most=client)
-  let ip = (req.ips && req.ips.length ? req.ips[0] : '')
-        || (req.headers['x-forwarded-for'] || '').split(',')[0].trim()
-        || req.ip
-        || req.socket?.remoteAddress
-        || '';
+  // trust proxy is already true at app level
+  if (Array.isArray(req.ips) && req.ips.length) return req.ips[0];
 
-  // Normalize IPv6/localhost variants
+  const xf = (req.headers['x-forwarded-for'] || '').split(',')[0].trim();
+  if (xf) return xf;
+
+  let ip = req.ip || req.socket?.remoteAddress || '';
   if (ip === '::1' || ip === '::ffff:127.0.0.1') return '127.0.0.1';
   if (ip.startsWith('::ffff:')) ip = ip.slice(7);
   return ip;
 }
+
 
 
 // hash-stream PRNG (deterministic, verifiable)
@@ -630,60 +653,62 @@ function evalHand(hand) {
   return { payout, isWin: payout>0, isRoyal: royal };
 }
 
-
-const handsByActor = new Map(); // `${uid}@${ip}`
-
-
-function touch(rec, now) {
-  return (!rec || (now - rec.windowStart) >= WINDOW_MS)
-    ? { windowStart: now, counts: { poker: 0, blackjack: 0 } }
-    : rec;
-}
-
 function gateStartHand(req, game = 'poker') {
-  const now = Date.now();
-  const ip  = getClientIp(req) || 'unknown';
-  const uid = req.uid || 'nouid';
-  const key = `${uid}@${ip}`;
+  const now  = Date.now();
+  const uid  = req.uid || 'nouid';
+  const ip   = getClientIp(req) || 'unknown';
+  const uah  = uaHash(req);
 
   const limit = (game === 'blackjack') ? HANDS_LIMIT_BJ : HANDS_LIMIT_POKER;
 
-  const perActor = touch(handsByActor.get(key), now);
-  const perIp    = touch(handsByIp.get(ip), now);
+  const rUid = touch(handsByUid.get(uid), now);
+  const rIp  = touch(handsByIp.get(ip), now);
+  const rUA  = touch(handsByUA.get(uah), now);
 
-  const usedActor = perActor.counts[game] || 0;
-  const usedIp    = perIp.counts[game]    || 0;
+  const usedUid = rUid.counts[game] || 0;
+  const usedIp  = rIp.counts[game]  || 0;
+  const usedUA  = rUA.counts[game]  || 0;
 
-  if (usedActor >= limit || usedIp >= limit) {
-    const started = Math.min(perActor.windowStart, perIp.windowStart);
-    const retryMs = Math.max(0, WINDOW_MS - (now - started));
-    return { ok: false, error: 'ip_limit', retryMs, limit };
+  // Strict user limit first (changing IP won't help)
+  if (usedUid >= limit) {
+    const retryMs = Math.max(0, WINDOW_MS - (now - rUid.windowStart));
+    logger.warn('gate/limit', { reason:'user', uid, ip, uah, game, used:usedUid, limit, retryMs });
+    return { ok:false, error:'user_limit', retryMs, limit };
+  }
+  // Then IP (stops many UIDs from one IP)
+  if (usedIp >= limit) {
+    const retryMs = Math.max(0, WINDOW_MS - (now - rIp.windowStart));
+    logger.warn('gate/limit', { reason:'ip', uid, ip, uah, game, used:usedIp, limit, retryMs });
+    return { ok:false, error:'ip_limit', retryMs, limit };
+  }
+  // Optional: per-device-ish via UA
+  if (usedUA >= limit) {
+    const retryMs = Math.max(0, WINDOW_MS - (now - rUA.windowStart));
+    logger.warn('gate/limit', { reason:'device', uid, ip, uah, game, used:usedUA, limit, retryMs });
+    return { ok:false, error:'device_limit', retryMs, limit };
   }
 
-  perActor.counts[game] = usedActor + 1;
-  perIp.counts[game]    = usedIp + 1;
+  // Allowed → increment all three buckets
+  rUid.counts[game] = usedUid + 1;
+  rIp.counts[game]  = usedIp + 1;
+  rUA.counts[game]  = usedUA + 1;
 
-  handsByActor.set(key, perActor);
-  handsByIp.set(ip, perIp);
+  handsByUid.set(uid, rUid);
+  handsByIp.set(ip, rIp);
+  handsByUA.set(uah, rUA);
 
-  const remaining = Math.max(0, limit - Math.max(perActor.counts[game], perIp.counts[game]));
-  return { ok: true, remaining, windowMs: WINDOW_MS };
+  const remaining = Math.max(0, limit - rUid.counts[game]);
+  return { ok:true, remaining, windowMs: WINDOW_MS };
 }
 
-// housecleaning
+
 setInterval(() => {
   const now = Date.now();
-  for (const [k, rec] of handsByActor) {
-    if (now - rec.windowStart >= WINDOW_MS) handsByActor.delete(k);
-  }
-  
-}, 6 * 60 * 1000);
-setInterval(() => {
-  const now = Date.now();
-  for (const [ip, record] of handsByIp) {
-    if (now - record.windowStart >= SIX_HOURS_MS) handsByIp.delete(ip);
+  for (const m of [handsByUid, handsByIp, handsByUA]) {
+    for (const [k, rec] of m) if (now - rec.windowStart >= WINDOW_MS) m.delete(k);
   }
 }, 6 * 60 * 1000);
+
 
 
 const drawLimiter = rateLimit({ windowMs: 60 * 1000, max: 60, standardHeaders: true, legacyHeaders: false });
