@@ -14,7 +14,7 @@ const PgSession = require('connect-pg-simple')(session);
 const {randomBytes, createHash, randomUUID } = require('crypto');
 
 const app = express();
-app.set('trust proxy', true);
+app.set('trust proxy', 1);
 
 // ----- ENV / MODE -----
 const isProd = process.env.NODE_ENV === 'production' || !!process.env.RENDER;
@@ -152,13 +152,6 @@ const tablesByGame = {
 
 if (!HCAPTCHA_SECRET) console.error('⚠️ HCAPTCHA_SECRET is not set');
 
-function getClientIp(req){
-  const xf = (req.headers['x-forwarded-for'] || '').split(',')[0].trim();
-  const raw = xf || req.socket?.remoteAddress || req.ip || 'unknown';
-  return raw === '::1' ? '127.0.0.1' : raw;
-   const ip = (req.ips && req.ips.length ? req.ips[0] : req.ip) || '';
-  return ip.startsWith('::ffff:') ? ip.slice(7) : ip;
-}
 
 // =================== Security headers ===================
 app.use(helmet()); // sets a bunch of safe defaults (noSniff, hsts, hidePoweredBy, etc.)
@@ -204,11 +197,6 @@ app.get('/healthz', async (_req,res)=>{
     try { await pool.query('select 1'); } catch { dbOk = 'down'; }
   }
   res.json({ ok:true, ts:new Date().toISOString(), db: dbOk });
-});
-
-app.use((req, _res, next) => {
-  logger.info('Incoming request', { method: req.method, url: req.url, ip: req.ip, ua: req.headers['user-agent'] || '' });
-  next();
 });
 
 // --- UID COOKIE (used by getOrCreateUser/saveAfterDraw) ---
@@ -265,13 +253,6 @@ function uaHash(req) {
   return createHash('sha256').update(ua).digest('hex').slice(0, 16);
 }
 
-
-setInterval(() => {
-  const now = Date.now();
-  for (const [ip, record] of handsByIp) {
-    if (now - record.windowStart >= SIX_HOURS_MS) handsByIp.delete(ip);
-  }
-}, 6 * 60 * 1000);
 
 app.get('/api/profile', async (req, res) => {
   try {
@@ -1475,7 +1456,13 @@ async function claimAndAwardBJ(
 
 
 // ---- Rate limits for BJ actions
-const bjStartLimiter  = rateLimit({ windowMs: 60_000, max: 40, standardHeaders:true, legacyHeaders:false });
+const bjStartLimiter  = rateLimit({
+  windowMs: 60_000,
+  max: 40,
+  keyGenerator: (req) => req.uid || req.ip || 'nouid',
+  standardHeaders: true,
+  legacyHeaders: false
+});
 const bjActionLimiter = rateLimit({ windowMs: 60_000, max: 80, standardHeaders:true, legacyHeaders:false });
 
 
