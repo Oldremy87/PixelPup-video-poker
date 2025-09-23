@@ -222,7 +222,6 @@ app.use((req, _res, next) => {
     method: req.method, url: req.url,
     ip: getClientIp(req),
     uid: req.uid,
-    uaHash: uaHash(req),
     ua: (req.headers['user-agent'] || '').slice(0,120)
   });
   next();
@@ -240,7 +239,6 @@ const HANDS_LIMIT_BJ    = Number(process.env.IP_HANDS_PER_6H_BJ    || HANDS_LIMI
 const WINDOW_MS   = 6 * 60 * 60 * 1000;
 const handsByUid = new Map(); // uid -> { windowStart, counts:{poker,bj} }
 const handsByIp  = new Map(); // ip  -> { windowStart, counts:{poker,bj} }
-const handsByUA  = new Map(); // uaHash -> { windowStart, counts:{poker,bj} } (optional)
 
 function touch(rec, now) {
   return (!rec || (now - rec.windowStart) >= WINDOW_MS)
@@ -638,45 +636,39 @@ function gateStartHand(req, game = 'poker') {
   const now  = Date.now();
   const uid  = req.uid || 'nouid';
   const ip   = getClientIp(req) || 'unknown';
-  const uah  = uaHash(req);
+  
 
   const limit = (game === 'blackjack') ? HANDS_LIMIT_BJ : HANDS_LIMIT_POKER;
 
   const rUid = touch(handsByUid.get(uid), now);
   const rIp  = touch(handsByIp.get(ip), now);
-  const rUA  = touch(handsByUA.get(uah), now);
+ 
 
   const usedUid = rUid.counts[game] || 0;
   const usedIp  = rIp.counts[game]  || 0;
-  const usedUA  = rUA.counts[game]  || 0;
+  
 
   // Strict user limit first (changing IP won't help)
   if (usedUid >= limit) {
     const retryMs = Math.max(0, WINDOW_MS - (now - rUid.windowStart));
-    logger.warn('gate/limit', { reason:'user', uid, ip, uah, game, used:usedUid, limit, retryMs });
+    logger.warn('gate/limit', { reason:'user', uid, ip, game, used:usedUid, limit, retryMs });
     return { ok:false, error:'user_limit', retryMs, limit };
   }
   // Then IP (stops many UIDs from one IP)
   if (usedIp >= limit) {
     const retryMs = Math.max(0, WINDOW_MS - (now - rIp.windowStart));
-    logger.warn('gate/limit', { reason:'ip', uid, ip, uah, game, used:usedIp, limit, retryMs });
+    logger.warn('gate/limit', { reason:'ip', uid, ip, game, used:usedIp, limit, retryMs });
     return { ok:false, error:'ip_limit', retryMs, limit };
-  }
-  // Optional: per-device-ish via UA
-  if (usedUA >= limit) {
-    const retryMs = Math.max(0, WINDOW_MS - (now - rUA.windowStart));
-    logger.warn('gate/limit', { reason:'device', uid, ip, uah, game, used:usedUA, limit, retryMs });
-    return { ok:false, error:'device_limit', retryMs, limit };
   }
 
   // Allowed → increment all three buckets
   rUid.counts[game] = usedUid + 1;
   rIp.counts[game]  = usedIp + 1;
-  rUA.counts[game]  = usedUA + 1;
+  
 
   handsByUid.set(uid, rUid);
   handsByIp.set(ip, rIp);
-  handsByUA.set(uah, rUA);
+  
 
   const remaining = Math.max(0, limit - rUid.counts[game]);
   return { ok:true, remaining, windowMs: WINDOW_MS };
@@ -685,7 +677,7 @@ function gateStartHand(req, game = 'poker') {
 
 setInterval(() => {
   const now = Date.now();
-  for (const m of [handsByUid, handsByIp, handsByUA]) {
+  for (const m of [handsByUid, handsByIp]) {
     for (const [k, rec] of m) if (now - rec.windowStart >= WINDOW_MS) m.delete(k);
   }
 }, 6 * 60 * 1000);
@@ -1455,14 +1447,7 @@ async function claimAndAwardBJ(
 }
 
 
-// ---- Rate limits for BJ actions
-const bjStartLimiter  = rateLimit({
-  windowMs: 60_000,
-  max: 40,
-  keyGenerator: (req) => req.uid || req.ip || 'nouid',
-  standardHeaders: true,
-  legacyHeaders: false
-});
+const bjStartLimiter  = rateLimit({ windowMs: 60_000, max: 40, standardHeaders:true, legacyHeaders:false });
 const bjActionLimiter = rateLimit({ windowMs: 60_000, max: 80, standardHeaders:true, legacyHeaders:false });
 
 
