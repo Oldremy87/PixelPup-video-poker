@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>Claim Winnings - KennelKlub</title>
+  <script src="https://hcaptcha.com/1/api.js" async defer></script>
+  <style>
+    body { background: #0b0f19; color: #00ffc6; font-family: system-ui, sans-serif; padding: 20px; display: grid; place-items: center; height: 100vh; margin: 0; }
+    .panel { background: #111827; border: 1px solid #3af5d9; padding: 30px; border-radius: 16px; max-width: 400px; width: 100%; text-align: center; box-shadow: 0 0 40px rgba(0,0,0,0.5); }
+    h1 { margin-top: 0; color: #ffcc00; }
+    .btn { background: #ffcc00; color: #000; padding: 14px; width: 100%; border: 0; border-radius: 10px; font-weight: bold; cursor: pointer; font-size: 16px; margin-top: 20px; }
+    .btn:disabled { background: #333; color: #666; cursor: not-allowed; }
+    .readout { color: #7fffe6; margin: 10px 0; line-height: 1.5; }
+    .address { font-family: monospace; background: #000; padding: 8px; border-radius: 6px; font-size: 12px; color: #aaa; word-break: break-all; }
+  </style>
+</head>
+<body>
+  <div class="panel">
+    <h1>Claim Winnings</h1>
+    
+    <div id="loading" class="readout">Checking Balance...</div>
+    
+    <div id="content" style="display:none">
+      <p class="readout" style="font-size: 1.4em; font-weight: bold;" id="balDisplay">0 KIBL</p>
+      <p class="readout">Sending to linked wallet:</p>
+      <div class="address" id="addrDisplay">...</div>
+      
+      <div class="h-captcha" data-sitekey="170a6dc4-35b6-4266-a2ce-6f3eb8c85d9c" style="margin-top:20px"></div>
+      
+      <button id="claimBtn" class="btn">Send to Wallet</button>
+    </div>
+
+    <p style="margin-top: 24px;"><a href="/" style="color: #3af5d9; text-decoration: none;">← Back to Arcade</a></p>
+  </div>
+
+<script>
+  async function init() {
+    // Get Profile & Wallet Status
+    const [p, w] = await Promise.all([
+      fetch('/api/profile').then(r=>r.json()),
+      fetch('/api/wallet/status').then(r=>r.json())
+    ]);
+
+    document.getElementById('loading').style.display = 'none';
+    
+    if (!w.linked || !w.address) {
+      document.querySelector('.panel').innerHTML = `
+        <h1>Wallet Not Linked</h1>
+        <p class="readout">You must link a wallet to withdraw.</p>
+        <a href="/connect.html" class="btn">Connect Wallet</a>
+      `;
+      return;
+    }
+
+    document.getElementById('content').style.display = 'block';
+    const bal = Math.floor((p.bank || 0) / 100);
+    
+    document.getElementById('balDisplay').textContent = `${bal} KIBL`;
+    document.getElementById('addrDisplay').textContent = w.address;
+    
+    const btn = document.getElementById('claimBtn');
+    if (bal <= 0) {
+      btn.disabled = true;
+      btn.textContent = 'No Balance to Claim';
+    }
+
+    btn.onclick = async () => {
+      const token = window.hcaptcha.getResponse();
+      if (!token) return alert('Please complete the captcha');
+      
+      btn.disabled = true;
+      btn.textContent = 'Sending...';
+      
+      try {
+        const c = await fetch('/api/csrf');
+        const cj = await c.json();
+        
+        const res = await fetch('/api/payout', {
+          method: 'POST',
+          headers: { 
+            'Content-Type': 'application/json',
+            'x-csrf-token': cj.csrfToken 
+          },
+          body: JSON.stringify({ 'h-captcha-response': token })
+        });
+        
+        const d = await res.json();
+        if (d.success) {
+          document.querySelector('.panel').innerHTML = `
+            <h1>Payout Sent!</h1>
+            <p class="readout">Transaction ID:</p>
+            <div class="address">${d.txId}</div>
+            <a href="/" class="btn">Back to Arcade</a>
+          `;
+        } else {
+          alert('Error: ' + d.error);
+          btn.disabled = false;
+          btn.textContent = 'Send to Wallet';
+          window.hcaptcha.reset();
+        }
+      } catch (e) {
+        alert('Network error');
+        btn.disabled = false;
+      }
+    };
+  }
+  init();
+</script>
+</body>
+</html>

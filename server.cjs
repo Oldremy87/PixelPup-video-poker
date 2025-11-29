@@ -12,11 +12,28 @@ const { Pool } = require('pg');
 const csrf = require('csurf');
 const PgSession = require('connect-pg-simple')(session);
 const {randomBytes, createHash, randomUUID } = require('crypto');
-
 const app = express();
+const {WatchOnlyWallet, rostrumProvider } = require('nexa-wallet-sdk');
 app.set('trust proxy', 1);
-
 // ----- ENV / MODE -----
+process.on('unhandledRejection', (reason) => {
+  console.error('[unhandledRejection]', reason);
+});
+process.on('uncaughtException', (err) => {
+  console.error('[uncaughtException]', err);
+});
+const PORT = process.env.PORT || 10000;
+
+// Hard-lock to MAINNET Rostrum (no testnet, no localhost)
+async function ensureRostrum() {
+  await rostrumProvider.connect({ scheme: 'wss', host: 'electrum.nexa.org', port: 20004 });
+}
+ensureRostrum().catch(()=>{});
+// KIBL token group HEX (64 hex chars – trim any trailing padding you may have)
+const KIBL_GROUP_HEX = '656bfefce8a0885acba5c809c5afcfbfa62589417d84d54108e6bb42a6f30000';
+
+
+
 const isProd = process.env.NODE_ENV === 'production' || !!process.env.RENDER;
 function must(name) {
   const v = process.env[name];
@@ -117,13 +134,13 @@ app.use((req, res, next) => {
 const crossSite = process.env.CROSS_SITE_COOKIES === 'true';
 const csrfProtection = csrf({
   cookie: {
-    key: '_csrf',           // name of the secret cookie
+    key: '_csrf',           
     httpOnly: true,
     sameSite: 'lax',
     secure: isProd,
   }
 });
-// must be BEFORE you mount csrfProtection on /api/* mutating routes
+// must be BEFORE you mount csrfProtection 
 app.get('/api/csrf', csrfProtection, (req, res) => {
   res.json({ csrfToken: req.csrfToken() });
 });
@@ -141,8 +158,8 @@ const DRAW_MIN_MS  = Number(process.env.DRAW_MIN_MS || 1500);     // min time be
 const MAX_PAYOUT   = Number(process.env.MAX_PAYOUT || 100_000);   // per claim cap (minor units)
 const BANK_CAP     = Number(process.env.BANK_CAP || 5_000_000);   // max server bank per session
 const PAYOUT_COOLDOWN_MS = Number(process.env.PAYOUT_COOLDOWN_MS || SIX_HOURS_MS); // per address cooldown
-const HCAPTCHA_SECRET   = process.env.HCAPTCHA_SECRET;  // REQUIRED
-const HCAPTCHA_HOSTNAME = process.env.HCAPTCHA_HOSTNAME || '';    // optional hardening
+const HCAPTCHA_SECRET   = process.env.HCAPTCHA_SECRET;  
+const HCAPTCHA_HOSTNAME = process.env.HCAPTCHA_HOSTNAME || '';   
 const tablesByGame = {
   poker:      { stats: 'user_stats',            points: 'season_points' },
   blackjack:  { stats: 'user_stats_blackjack',  points: 'season_points_blackjack' }
@@ -154,29 +171,27 @@ if (!HCAPTCHA_SECRET) console.error('⚠️ HCAPTCHA_SECRET is not set');
 
 
 // =================== Security headers ===================
-app.use(helmet()); // sets a bunch of safe defaults (noSniff, hsts, hidePoweredBy, etc.)
+app.use(helmet()); 
 
-// Match your explicit policies:
 app.use(helmet.referrerPolicy({ policy: 'no-referrer' }));
 
-// X-Frame-Options for old browsers (CSP frame-ancestors is the modern control)
 app.use(helmet.frameguard({ action: 'deny' })); // deny being embedded anywhere
 
-// Content Security Policy (keeps your inline scripts + hCaptcha working)
+// Content Security Policy 
 app.use(
   helmet.contentSecurityPolicy({
-    useDefaults: false, // we’ll be explicit
+    useDefaults: false, 
     directives: {
       defaultSrc: ["'self'"],
-      scriptSrc: ["'self'", "'unsafe-inline'", "https://hcaptcha.com", "https://*.hcaptcha.com"],
+      scriptSrc: ["'self'", "'unsafe-inline'", "https://hcaptcha.com", "https://*.hcaptcha.com" , "https://esm.sh"],
       styleSrc: ["'self'", "'unsafe-inline'"],
       imgSrc: ["'self'", "data:", "blob:"],
-      connectSrc: ["'self'"],
+      connectSrc: ["'self'", "https:", "wss:"],
       frameSrc: ["https://hcaptcha.com", "https://*.hcaptcha.com"],
       objectSrc: ["'none'"],
       baseUri: ["'self'"],
       formAction: ["'self'"],
-      frameAncestors: ["'none'"], // don’t allow others to iframe your site
+      frameAncestors: ["'none'"], 
      upgradeInsecureRequests: []  
     },
   })
@@ -199,21 +214,6 @@ app.get('/healthz', async (_req,res)=>{
   res.json({ ok:true, ts:new Date().toISOString(), db: dbOk });
 });
 
-// --- UID COOKIE (used by getOrCreateUser/saveAfterDraw) ---
-app.use((req, res, next) => {
-  let uid = req.cookies?.uid;
-  if (!uid) {
-    uid = randomUUID();
-    res.cookie('uid', uid, {
-      httpOnly: true,
-      sameSite: 'lax',
-      secure: process.env.NODE_ENV === 'production',
-      maxAge: 1000 * 60 * 60 * 24 * 365
-    });
-  }
-  req.uid = uid;
-  next();
-});
 app.get('/api/version', (_req,res)=> {
   res.json({ ok:true, commit: process.env.GIT_COMMIT || null, build: process.env.BUILD_ID || null });
 });
@@ -228,7 +228,6 @@ app.use((req, _res, next) => {
 });
 
 
-
 // =================== Hand/IP limiting ===================
 
 const HANDS_WINDOW_MS  = SIX_HOURS_MS;
@@ -237,21 +236,13 @@ const HANDS_LIMIT = Math.max(1, Number(process.env.IP_HANDS_PER_6H)) || 40;
 const HANDS_LIMIT_POKER = Number(process.env.IP_HANDS_PER_6H_POKER || HANDS_LIMIT);
 const HANDS_LIMIT_BJ    = Number(process.env.IP_HANDS_PER_6H_BJ    || HANDS_LIMIT);
 const WINDOW_MS   = 6 * 60 * 60 * 1000;
-const handsByUid = new Map(); // uid -> { windowStart, counts:{poker,bj} }
-const handsByIp  = new Map(); // ip  -> { windowStart, counts:{poker,bj} }
-
+const handsByUid = new Map(); 
+const handsByIp  = new Map(); 
 function touch(rec, now) {
   return (!rec || (now - rec.windowStart) >= WINDOW_MS)
     ? { windowStart: now, counts: { poker: 0, blackjack: 0 } }
     : rec;
 }
-
-function uaHash(req) {
-  const ua = (req.headers['user-agent'] || '').slice(0, 200);
-  return createHash('sha256').update(ua).digest('hex').slice(0, 16);
-}
-
-
 app.get('/api/profile', async (req, res) => {
   try {
     ensureBank(req);
@@ -313,7 +304,6 @@ app.get('/api/profile', async (req, res) => {
 });
 
 function getClientIp(req) {
-  // trust proxy is already true at app level
   if (Array.isArray(req.ips) && req.ips.length) return req.ips[0];
 
   const xf = (req.headers['x-forwarded-for'] || '').split(',')[0].trim();
@@ -330,25 +320,33 @@ function getClientIp(req) {
 // hash-stream PRNG (deterministic, verifiable)
 const sha256hex = (s) => createHash('sha256').update(String(s)).digest('hex');
 const randHex = (n = 32) => randomBytes(n).toString('hex');
+// --- FIX: Unbiased Rejection Sampling Shuffle ---
 function* hashStream(seedHex) {
   let h = seedHex;
-  for (;;) {
+  while (true) {
     h = sha256hex(h);
-    // use first 8 hex chars as a 32-bit integer → [0,1)
-    const u32 = parseInt(h.slice(0, 8), 16) >>> 0;
-    yield u32 / 0xffffffff;
+    // Yield the full 32-bit integer value (0 to 4294967295)
+    yield parseInt(h.slice(0, 8), 16) >>> 0;
   }
 }
-// Fisher–Yates with a provided random stream
+
 function shuffleDeterministic(deck, rng) {
   const a = deck.slice();
   for (let i = a.length - 1; i > 0; i--) {
-    const r = rng.next().value;                      // 0..1
-    const j = Math.floor(r * (i + 1));              // 0..i
+    // Implements Rejection Sampling to eliminate modulo bias
+    const max = i + 1;
+    const limit = 0xFFFFFFFF - (0xFFFFFFFF % max);
+    let r;
+    do {
+      r = rng.next().value; // Get next 32-bit int
+    } while (r >= limit); // Discard if in the "biased zone"
+    
+    const j = r % max;
     [a[i], a[j]] = [a[j], a[i]];
   }
   return a;
 }
+// Leaderboard
 app.get('/api/leaderboard/top', async (req, res) => {
   try {
     const game = (req.query.game === 'blackjack') ? 'blackjack' : 'poker';
@@ -451,7 +449,7 @@ app.get('/api/leaderboard/window', async (req, res) => {
       you: r.is_you
     }));
 
-    // Give handy deltas to the next/prev ranks (for UI “you’re 8 pts behind”)
+    // Give handy deltas to the next/prev ranks 
     let you = window.find(x => x.you) || null;
     if (you) {
       const idx = window.findIndex(x => x.you);
@@ -589,8 +587,6 @@ async function awardSeasonPoints(uid, points){
   } catch(e){ await p.query('rollback'); }
 }
 
-
-// In server.js, extend ensureBank()
 function ensureBank(req) {
   if (!req.session.bank) req.session.bank = 0;
   if (!req.session.bank && req.session.bank !== 0) req.session.bank = 0;
@@ -606,6 +602,151 @@ function ensureBank(req) {
       }
   if (!req.session.currentHand) req.session.currentHand = null;
 }
+// Wallet functions
+// /api/wallet/balance
+app.get('/api/wallet/balance', async (req, res) => {
+  try {
+    await ensureRostrum();
+
+    const address = String(req.query.address || '');
+    if (!/^nexa:[a-z0-9]+$/i.test(address)) {
+      return res.status(400).json({ ok:false, error:'bad_address' });
+    }
+
+    // Watch-only against the single address, mainnet
+    const w = new WatchOnlyWallet({ address }, 'mainnet');
+
+    // New 0.8.0 helpers – already aggregated; no manual UTXO math
+    const nexaBal     = await w.getBalance();         // { confirmed:"...", unconfirmed:"..." }
+    const tokenBals   = await w.getTokenBalances();   // { [tokenHex]: { confirmed:"...", unconfirmed:"..." }, ... }
+
+    // Pull just KIBL (string → Number → /100). No BigInt anywhere.
+    const kiblMinor   = Number(tokenBals[KIBL_GROUP_HEX]?.confirmed || 0);
+    const nexaMinor   = Number(nexaBal.confirmed || 0);
+
+    res.json({
+      ok: true,
+      address,
+      tokenHex: KIBL_GROUP_HEX,
+      nexaMinor: String(nexaMinor),
+      nexa: (nexaMinor / 100).toFixed(2),
+      kiblMinor: String(kiblMinor),
+      kibl: (kiblMinor / 100).toFixed(2),
+    });
+  } catch (e) {
+    console.error('balance_error', e);
+    res.status(500).json({ ok:false, error:'balance_error' });
+  }
+});
+
+
+// /api/wallet/link  (server)
+app.post('/api/wallet/link', async (req, res) => {
+  try {
+    const { address, network } = req.body || {};
+    if (!address || !/^nexa:/.test(address)) return res.status(400).json({ ok:false, error:'bad_address' });
+    const net = (network === 'mainnet') ? 'mainnet' : 'mainnet'; 
+    await getOrCreateUser(req.uid);
+    if (hasDb) {
+      const p = await db();
+      await p.query(
+        `update users set wallet_addr=$2, wallet_net=$3, last_seen_at=now() where user_id=$1`,
+        [req.uid, address, net]
+      );
+    } else {
+      req.session.linkedWallet = { address, network: net };
+      if (req.session.save) await new Promise((r,j)=>req.session.save(e=>e?j(e):r()));
+    }
+    res.json({ ok:true });
+  } catch { res.status(500).json({ ok:false, error:'link_error' }); }
+});
+app.get('/api/wallet/status', async (req,res)=>{
+  try {
+    if (req.session?.linkedWallet) return res.json({ ok:true, linked:true, ...req.session.linkedWallet });
+    if (!hasDb) return res.json({ ok:true, linked:false });
+    const p = await db();
+    const { rows } = await p.query('select wallet_addr as address, wallet_net as network from users where user_id=$1', [req.uid]);
+    if (rows[0]?.address) return res.json({ ok:true, linked:true, ...rows[0] });
+    res.json({ ok:true, linked:false });
+  } catch { res.status(500).json({ ok:false, error:'status_error' }); }
+});
+
+app.post('/api/bet/build-unsigned', async (req, res) => {
+  try {
+    // --- FIX: Ensure connection here too ---
+    await rostrumProvider.connect({
+      scheme: 'wss',
+      host: 'electrum.nexa.org',
+      port: 20004,
+    });
+    const { fromAddress, kiblAmount, feeNexa } = req.body;
+    if (!fromAddress || !/^nexa:[a-z0-9]+$/i.test(fromAddress)) return res.status(400).json({ ok: false, error: 'bad_address' });
+    if (!Number.isInteger(kiblAmount) || kiblAmount <= 0) return res.status(400).json({ ok: false, error: 'bad_kibl_amount' });
+    if (!Number.isInteger(feeNexa) || feeNexa <= 0) return res.status(400).json({ ok: false, error: 'bad_fee' });
+    
+
+    const network = 'mainnet';
+    const house = 'nexa:nqtsq5g5pvucuzm2kh92kqtxy5s3zfutq3xgnhh5src65fc3';
+    const tokenIdHex = '656bfefce8a0885acba5c809c5afcfbfa62589417d84d54108e6bb42a6f30000'
+    const tokenId = 'nexa:tpjkhlhuazsgskkt5hyqn3d0e7l6vfvfg97cf42pprntks4x7vqqqcavzypmt'
+  
+    const w = new WatchOnlyWallet({ address: fromAddress }, network);
+const nexaBal   = await w.getBalance();
+const tokenBals = await w.getTokenBalances();
+const kiblAvail = Number(tokenBals[KIBL_GROUP_HEX]?.confirmed || 0);
+    const unsignedTx = await w.newTransaction()
+      .sendTo(house, feeNexa.toString())  
+      .sendToToken(house, kiblAmount.toString(), tokenId)
+      .populate()
+      .build();
+
+    console.log('[build-unsigned] FULL HEX >>>\n' + unsignedTx + '\n<<< END');
+    console.log('[build-unsigned] unsignedTx length', unsignedTx?.length);
+
+    return res.json({ ok: true, unsignedTx, house, network });
+  } catch (e) {
+    console.error('build_unsigned_failed', e);
+    return res.status(500).json({ ok: false, error: 'build_failed' });
+  }
+});
+
+app.post('/api/tx/broadcast', async (req, res) => {
+  try {
+    await rostrumProvider.connect({
+      scheme: 'wss',
+      host: 'electrum.nexa.org',
+      port: 20004,
+    });
+
+    const { hex } = req.body || {};
+    if (!hex || typeof hex !== 'string') {
+      console.log('[broadcast] bad hex', typeof hex, hex?.length);
+      return res.status(400).json({ ok: false, error: 'bad_hex' });
+    }
+
+    // 2. Initialize WatchOnlyWallet matching your "build-unsigned" syntax
+    // We use a dummy address here because we are just relaying a signed message.
+    const network = 'mainnet';
+    const dummyAddress = 'nexa:nqtsq5g5pvucuzm2kh92kqtxy5s3zfutq3xgnhh5src65fc3'; // House or burn addr
+    
+    // exact syntax match: new WatchOnlyWallet({ address: ... }, network)
+    const broadcaster = new WatchOnlyWallet({ address: dummyAddress }, network);
+
+    // 3. Broadcast
+    const txid = await broadcaster.sendTransaction(hex);
+
+    console.log('[broadcast ok] txid', txid);
+    return res.json({ ok: true, txid });
+
+  } catch (e) {
+    console.error('broadcast_error', e);
+    // Send the actual error message back to help with debugging
+    return res.status(500).json({ 
+      ok: false, 
+      error: e.message || 'broadcast_failed' 
+    });
+  }
+});
 
 function evalHand(hand) {
   const sorted = hand.slice().sort((a,b)=>RANK_VALUE[a.rank]-RANK_VALUE[b.rank]);
@@ -642,11 +783,11 @@ function gateStartHand(req, game = 'poker') {
 
   const rUid = touch(handsByUid.get(uid), now);
   const rIp  = touch(handsByIp.get(ip), now);
- 
+  
 
   const usedUid = rUid.counts[game] || 0;
   const usedIp  = rIp.counts[game]  || 0;
-  
+ 
 
   // Strict user limit first (changing IP won't help)
   if (usedUid >= limit) {
@@ -664,7 +805,7 @@ function gateStartHand(req, game = 'poker') {
   // Allowed → increment all three buckets
   rUid.counts[game] = usedUid + 1;
   rIp.counts[game]  = usedIp + 1;
-  
+ 
 
   handsByUid.set(uid, rUid);
   handsByIp.set(ip, rIp);
@@ -694,16 +835,14 @@ app.post('/api/start-hand', async (req, res) => {
 
     ensureBank(req);
 
-    // optional client seed from body (hex string or any string)
     const clientSeed = (req.body && typeof req.body.clientSeed === 'string')
       ? req.body.clientSeed.trim()
       : '';
 
     const handId     = randomUUID();
-    const serverSeed = randHex(32);            // 32 bytes → 64 hex
-    const commitHash = sha256hex(serverSeed);  // publish now, reveal later
+    const serverSeed = randHex(32);
+    const commitHash = sha256hex(serverSeed);
 
-    // stash round in session
     req.session.round = {
       handId,
       commit: commitHash,
@@ -713,74 +852,81 @@ app.post('/api/start-hand', async (req, res) => {
     };
     req.session.hasDrawn = false;
 
-    // best-effort audit trail; do not fail the request on DB hiccup
     if (hasDb) {
-    try {
-      const p = await db();
-      await getOrCreateUser(req.uid);
-      await ensureDisplayId(req.uid); // make sure display_id exists once
-      await p.query(
-        `INSERT INTO fair_rounds(hand_id, user_id, commit_hash, client_seed)
-         VALUES ($1,$2,$3,$4)`,
-        [handId, req.uid, commitHash, clientSeed || null]
-      );
-    } catch (e) {
-      logger.error('fair_rounds insert', { e: String(e) });
+      try {
+        const p = await db();
+        await getOrCreateUser(req.uid);
+        await ensureDisplayId(req.uid);
+        await p.query(
+          `INSERT INTO fair_rounds(hand_id, user_id, commit_hash, client_seed)
+           VALUES ($1,$2,$3,$4)`,
+          [handId, req.uid, commitHash, clientSeed || null]
+        );
+      } catch (e) {
+        logger.error('fair_rounds insert', { e: String(e) });
+      }
     }
-  }
-    // return the gate info + fair commit
+
+    // --- FIX: Force save before replying ---
+    await new Promise((resolve, reject) => {
+      req.session.save((err) => {
+        if (err) reject(err);
+        else resolve();
+      });
+    });
+
     return res.json({
       ok:true,
-      g,               // { ok:true, remaining, windowMs, ... }
+      g,
       handId,
       commit: commitHash
     });
-
   } catch (e) {
     console.error('start-hand error', e);
     return res.status(500).json({ ok:false, error:'start_hand_error' });
   }
 });
 
-// Deterministic /api/deal using your "2_of_Clubs.png" naming
-app.post('/api/deal', dealLimiter, (req, res) => {
-  // keep your IP gate behavior
-  const ip = getClientIp(req);
-  const rec = handsByIp.get(ip);
-  if (!rec) return res.status(429).json({ ok:false, error:'use_start_hand_first' });
-
+app.post('/api/deal', dealLimiter, async (req, res) => {
+  // REMOVED: The specific IP memory check (handsByIp)
+  // Why: You already passed the gate at 'start-hand'.
+  
   ensureBank(req);
 
+  // Security Check: Do they actually have a paid hand in the session?
   const round = req.session.round;
   if (!round || !round.handId || !round.serverSeed) {
     return res.status(400).json({ ok:false, error:'use_start_hand_first' });
   }
 
-  // === deterministic seed everyone can reproduce ===
-  // IMPORTANT: any change to this string or deck build order affects verification.
+  // ... (Standard Deck Building Logic) ...
   const seedString = `${round.serverSeed}:${round.clientSeed || ''}:${round.handId}:deal`;
-  const rng = hashStream(sha256hex(seedString)); // helpers you added earlier
+  const rng = hashStream(sha256hex(seedString));
 
-  // === build canonical unshuffled deck (Suits outer, Ranks inner) ===
   const deck0 = [];
   for (const s of SUITS) {
     for (const r of RANKS) {
       deck0.push({
         rank: r,
         suit: s,
-        filename: `${r}_of_${s}.png`,   // <- "2_of_Clubs.png", "Jack_of_Spades.png"
+        filename: `${r}_of_${s}.png`,
         displayText: `${r} of ${s}`
       });
     }
   }
-  // === deterministic shuffle → first 5 are the hand ===
-  const deck = shuffleDeterministic(deck0, rng); // helper from earlier patch
+  
+  const deck = shuffleDeterministic(deck0, rng);
   const hand = deck.slice(0, 5);
-  // persist remaining deck for draw() to pull replacements from (also deterministic)
+  
   req.session.deck = deck.slice(5);
   req.session.currentHand = hand;
   req.session.hasDrawn = false;
-  // include fair commit bits so UI can show “Commit …”
+
+  // Force Save to prevent Race Condition
+  await new Promise((resolve, reject) => {
+    req.session.save((err) => (err ? reject(err) : resolve()));
+  });
+
   return res.json({
     ok: true,
     hand,
@@ -788,29 +934,22 @@ app.post('/api/deal', dealLimiter, (req, res) => {
   });
 });
 
-app.post('/api/draw', drawLimiter, async (req, res) => {
+   app.post('/api/draw', drawLimiter, async (req, res) => {
   try {
-    const ip = getClientIp(req);
-    ensureBank(req); // make sure req.session.bank is a finite number
+   
+    ensureBank(req);
 
-    // throttle per session (handle first-draw case)
     const now = Date.now();
     const lastDrawAt = Number(req.session.lastDrawAt) || 0;
     if (now - lastDrawAt < DRAW_MIN_MS) {
       return res.status(429).json({ ok: false, error: 'too_fast' });
     }
 
-    // Require a started hand (paired with /api/start-hand)
-    const rec = handsByIp.get(ip);
-    if (!rec) {
-      return res.status(429).json({ ok: false, error: 'use_start_hand_first' });
-    }
-
-    // Validate payload & draw state
     const { held } = req.body || {};
     if (!Array.isArray(held) || held.length !== 5) {
       return res.status(400).json({ ok: false, error: 'bad_hold_array' });
     }
+    // Security Check: Do they have cards to draw against?
     if (!req.session.currentHand || !Array.isArray(req.session.deck)) {
       return res.status(400).json({ ok: false, error: 'deal_first' });
     }
@@ -973,70 +1112,111 @@ app.get('/api/fair/:handId', async (req, res) => {
 
 const rewardLimiter = rateLimit({ windowMs: 60 * 1000, max: 12, standardHeaders: true, legacyHeaders: false });
 // DAILY REWARD (minor units throughout)
-app.post('/api/daily-reward', rewardLimiter, async (req, res) => {
+app.post('/api/daily-reward', async (req, res) => {
+  const ip = (typeof getClientIp === 'function') ? getClientIp(req) : req.ip;
+  const uid = req.uid; // From session
+  const FAUCET_AMOUNT = 1000 * 100; // 1,000 KIBL (in minor units)
+  
+  const COOLDOWN = 24 * 60 * 60 * 1000; 
+
   try {
-    ensureBank(req); // guarantees req.session.bank is a finite number
+    if (!process.env.KIBL_GROUP_ID) throw new Error('Server Config Error: Missing KIBL_GROUP_ID');
 
-    const now     = Date.now();
-    const last    = Number(req.session.lastDailyRewardAt) || 0;
-    const elapsed = now - last;
-
-    if (elapsed < ONE_DAY_MS) {
-      return res.status(429).json({
-        ok: false,
-        error: 'already_claimed',
-        retryInMs: ONE_DAY_MS - elapsed,
-        nextClaimAt: last + ONE_DAY_MS
-      });
-    }
-
-    // award in MINOR units; front-end divides by 100 when displaying KIBL
-    const DAILY_REWARD = 100 * 100; // 100 KIBL → minor units
-
-    req.session.wallet ||= { poker: 0, blackjack: 0 };
-    req.session.wallet.poker = Math.max(0, Number(req.session.wallet.poker || 0) + DAILY_REWARD);
-
-    const cap = Number(process.env.BANK_CAP ?? BANK_CAP ?? 5_000_000);
-    req.session.bank = Math.min(
-    cap,
-     Number(req.session.wallet.poker || 0) + Number(req.session.wallet.blackjack || 0)
-      );
-
-req.session.lastDailyRewardAt = now;
-
-    // Mirror to DB (cap-safe); do NOT fail the request if DB write has an issue
-    try {
-      await getOrCreateUser(req.uid);
+    if (hasDb) {
       const p = await db();
-      const cap = Number(process.env.BANK_CAP ?? process.env.BANK_CAP ?? BANK_CAP ?? 5_000_000);
-      await p.query(
-        'UPDATE user_stats SET bank_minor = LEAST(bank_minor + $2, $3), last_seen_at = now() WHERE user_id = $1',
-        [req.uid, DAILY_REWARD, cap]
+      const { rows } = await p.query(
+        `SELECT created_at FROM payouts 
+         WHERE (ip = $1 OR user_id = $2) AND type = 'faucet' 
+         ORDER BY created_at DESC LIMIT 1`,
+        [ip, uid]
       );
-    } catch (e) {
-      logger.error('db bank increment failed on daily', { e: String(e) });
-      // continue; session already updated so user still gets reward
+
+      if (rows.length > 0) {
+        const last = new Date(rows[0].created_at).getTime();
+        const diff = Date.now() - last;
+        
+        // --- RATE LIMIT CHECK (Comment out ONLY for testing) ---
+        if (diff < COOLDOWN) {
+           return res.status(429).json({ 
+            ok: false, 
+            error: 'Daily reward already claimed.', 
+           retryInMs: COOLDOWN - diff 
+           });
+        }
+        // ------------------------------------------------------
+      }
     }
 
-    // Persist session before replying
-    await new Promise((resolve, reject) => {
-      if (typeof req.session.save === 'function') {
-        req.session.save(err => (err ? reject(err) : resolve()));
-      } else {
-        resolve();
-      }
+    // 2. GET TARGET ADDRESS (Secure Lookup - Matches /api/payout)
+    let targetAddress = null;
+    if (hasDb && uid) {
+       const p = await db();
+       const { rows } = await p.query('SELECT wallet_addr FROM users WHERE user_id=$1', [uid]);
+       if (rows[0]?.wallet_addr) targetAddress = rows[0].wallet_addr;
+    }
+    // Fallback to session
+    if (!targetAddress) {
+        targetAddress = req.session.linkedWallet?.address;
+    }
+
+    if (!targetAddress) {
+      return res.status(400).json({ ok: false, error: 'Link wallet to claim daily reward.' });
+    }
+
+    // 3. VALIDATE ADDRESS (Prevents RPC crashes)
+    if (!targetAddress.startsWith('nexa:')) {
+        return res.status(400).json({ ok: false, error: 'Invalid linked address format.' });
+    }
+
+    // 4. SEND TOKENS (Using Node RPC)
+    const rpcUrl = process.env.RPC_URL || `http://localhost:${process.env.RPC_PORT || 7227}`;
+    const auth = Buffer.from(`${process.env.RPC_USER}:${process.env.RPC_PASSWORD}`).toString('base64');
+    
+    // Log the attempt (helps debug)
+    console.log(`[Faucet] Sending ${FAUCET_AMOUNT} to ${targetAddress}...`);
+
+    const rpcBody = JSON.stringify({
+      jsonrpc: '1.0', id: 'faucet', method: 'token',
+      params: ['send', process.env.KIBL_GROUP_ID, targetAddress, String(FAUCET_AMOUNT)]
     });
 
-    return res.json({
-      ok: true,
-      credit: DAILY_REWARD,              // minor units
-      sessionBalance: req.session.bank,  // minor units
-      nextClaimAt: now + ONE_DAY_MS
+    // Ensure 'fetch' is available (Node 18+ has it global, older needs import)
+    const rpcRes = await fetch(rpcUrl, { 
+        method:'POST', 
+        headers:{'Content-Type':'application/json', 'Authorization':`Basic ${auth}`}, 
+        body: rpcBody 
+    });
+    
+    if (!rpcRes.ok) {
+        throw new Error(`RPC HTTP Error: ${rpcRes.status} ${rpcRes.statusText}`);
+    }
+
+    const rpcData = await rpcRes.json();
+    
+    if (rpcData.error) {
+        throw new Error('RPC Logic Error: ' + JSON.stringify(rpcData.error));
+    }
+    const txId = rpcData.result;
+
+    // 5. LOG CLAIM TO DB
+    if (hasDb) {
+      const p = await db();
+      await p.query(
+        `INSERT INTO payouts(user_id, address, amount_kibl, tx_id, ip, type, status) 
+         VALUES ($1, $2, $3, $4, $5, 'faucet', 'success')`,
+        [uid, targetAddress, FAUCET_AMOUNT/100, txId, ip]
+      );
+    }
+
+    return res.json({ 
+      ok: true, 
+      credit: FAUCET_AMOUNT, 
+      txId 
     });
 
-  } catch (err) {
-    // don’t leak internals
-    return res.status(500).json({ ok: false, error: 'server_error' });
+  } catch (e) {
+    console.error('Faucet Route Error:', e); // Check your server console for this!
+    return res.status(500).json({ ok: false, error: 'Faucet error: ' + e.message });
   }
 });
 
@@ -1061,158 +1241,116 @@ const payoutLimiter = rateLimit({
 });
 app.use('/api/payout', payoutLimiter);
 
-app.post('/api/payout', async (req, res) => {
+app.post('/api/payout', payoutLimiter, async (req, res) => {
   try {
     ensureBank(req);
 
-    // ----- which wallet(s) to pay from? default = both -----
-    const game = (req.body?.game || 'all').toString().toLowerCase(); // 'poker' | 'blackjack' | 'all'
-    const pokerMinor = Math.max(0, Number(req.session.wallet?.poker || 0));
-    const bjMinor    = Math.max(0, Number(req.session.wallet?.blackjack || 0));
-    const availableMinor =
-      game === 'poker'     ? pokerMinor :
-      game === 'blackjack' ? bjMinor    :
-      (pokerMinor + bjMinor);
+    // 1. DETERMINE TARGET ADDRESS (Secure Lookup)
+    let targetAddress = null;
+    
+    // Check DB first
+    if (hasDb) {
+        const p = await db();
+        const { rows } = await p.query('SELECT wallet_addr FROM users WHERE user_id=$1', [req.uid]);
+        targetAddress = rows[0]?.wallet_addr;
+    } 
+    // Fallback to session (if DB is down or using memory store)
+    if (!targetAddress) {
+        targetAddress = req.session.linkedWallet?.address;
+    }
 
-    const {
-      playerAddress,
-      'h-captcha-response': hcapStd,
-      hcaptchaToken: hcapCustom,
-    } = req.body || {};
+    if (!targetAddress) {
+        return res.status(400).json({ error: 'No linked wallet found. Please Connect Wallet first.' });
+    }
 
+    // 2. Validate Address Format
+    if (!looksLikeNexaAddress(targetAddress)) {
+        return res.status(400).json({ error: 'Linked address is invalid.' });
+    }
+
+    // 3. CAPTCHA & BALANCE CHECKS (Standard Logic)
+    const { 'h-captcha-response': hcapStd, hcaptchaToken: hcapCustom } = req.body || {};
     const captchaToken = hcapCustom || hcapStd;
-    if (!captchaToken) return res.status(400).json({ error: 'Please complete the hCaptcha challenge!' });
+    
+    if (!captchaToken) return res.status(400).json({ error: 'Please complete the captcha!' });
     if (usedCaptchaTokens.has(captchaToken)) return res.status(400).json({ error: 'captcha_replay' });
     usedCaptchaTokens.add(captchaToken);
 
-    // verify hCaptcha (with retries)
+    // Verify Captcha
     let captchaResponse;
-    for (let attempt = 1; attempt <= 3; attempt++) {
-      try {
+    try {
         captchaResponse = await hcaptcha.verify(process.env.HCAPTCHA_SECRET, captchaToken, req.ip);
-        break;
-      } catch (err) {
-        if (attempt === 3) throw err;
-        await new Promise(r => setTimeout(r, 1000 * attempt));
-      }
-    }
-    if (!captchaResponse?.success) {
-      return res.status(400).json({ error: 'hCaptcha verification failed', detail: captchaResponse?.['error-codes'] || null });
-    }
+    } catch(e) {}
+    
+    if (!captchaResponse?.success) return res.status(400).json({ error: 'Captcha failed' });
 
-    if (!availableMinor) return res.status(400).json({ error: 'No balance to withdraw' });
-    if (!looksLikeNexaAddress(playerAddress)) return res.status(400).json({ error: 'Invalid Nexa address' });
+    // Check Balance
+    const game = (req.body?.game || 'all').toString().toLowerCase();
+    const pokerMinor = Math.max(0, Number(req.session.wallet?.poker || 0));
+    const bjMinor    = Math.max(0, Number(req.session.wallet?.blackjack || 0));
+    const availableMinor = (game === 'poker') ? pokerMinor : (game === 'blackjack') ? bjMinor : (pokerMinor + bjMinor);
 
-    // per-address cooldown
-    const lastAt = lastPayoutByAddress.get(playerAddress) || 0;
-    if (Date.now() - lastAt < PAYOUT_COOLDOWN_MS) {
-      const wait = PAYOUT_COOLDOWN_MS - (Date.now() - lastAt);
-      return res.status(429).json({ error: 'address_cooldown', retryInMs: wait });
-    }
+    if (!availableMinor || availableMinor <= 0) return res.status(400).json({ error: 'No balance to withdraw' });
 
-    // compute send amount (minor units)
+    // 4. PREPARE RPC SEND
     const sendMinor = Math.min(availableMinor, MAX_PAYOUT);
     const sendWholeKibl = Math.floor(sendMinor / 100);
 
-    // breakdown deduction by wallet
+    // Deduction logic
     let deductPoker = 0, deductBJ = 0;
-    if (game === 'poker') {
-      deductPoker = sendMinor;
-    } else if (game === 'blackjack') {
-      deductBJ = sendMinor;
-    } else {
-      // take from poker first, then blackjack
-      deductPoker = Math.min(pokerMinor, sendMinor);
-      deductBJ = sendMinor - deductPoker;
+    if (game === 'poker') deductPoker = sendMinor;
+    else if (game === 'blackjack') deductBJ = sendMinor;
+    else {
+        deductPoker = Math.min(pokerMinor, sendMinor);
+        deductBJ = sendMinor - deductPoker;
     }
 
-    // RPC config
+    // 5. EXECUTE RPC
     const rpcUrl = process.env.RPC_URL || `http://localhost:${process.env.RPC_PORT || 7227}`;
-    if (!process.env.RPC_USER || !process.env.RPC_PASSWORD || !process.env.KIBL_GROUP_ID) {
-      return res.status(500).json({ error: 'Server configuration error' });
-    }
     const auth = Buffer.from(`${process.env.RPC_USER}:${process.env.RPC_PASSWORD}`).toString('base64');
+    
     const rpcBody = JSON.stringify({
-      jsonrpc: '1.0',
-      id: 'kibl',
-      method: 'token',
-      params: ['send', process.env.KIBL_GROUP_ID, playerAddress, String(sendMinor)]
+      jsonrpc: '1.0', id: 'kibl', method: 'token',
+      params: ['send', process.env.KIBL_GROUP_ID, targetAddress, String(sendMinor)] // <--- USES targetAddress
     });
 
-    // RPC send with retry
-    let txId = null;
-    for (let attempt = 1; attempt <= 3; attempt++) {
-      try {
-        const response = await fetch(rpcUrl, { method:'POST', headers:{ 'Content-Type':'application/json', 'Authorization':`Basic ${auth}` }, body: rpcBody });
-        const data = await response.json().catch(async () => { throw new Error(`RPC ${response.status} ${await response.text()}`); });
-        if (data.error) throw new Error(`RPC error: ${JSON.stringify(data.error)}`);
-        txId = data.result;
-        break;
-      } catch (err) {
-        if (attempt === 3) throw err;
-        await new Promise(r => setTimeout(r, 1000 * attempt));
-      }
-    }
-
-    // post-send bookkeeping
-    req.session.wallet.poker     = Math.max(0, pokerMinor - deductPoker);
-    req.session.wallet.blackjack = Math.max(0, bjMinor    - deductBJ);
-    req.session.bank = Math.max(0, Number(req.session.wallet.poker || 0) + Number(req.session.wallet.blackjack || 0));
-
-    lastPayoutByAddress.set(playerAddress, Date.now());
-
-    // persist session
-    await new Promise((resolve, reject) => {
-      if (typeof req.session.save === 'function') req.session.save(err => (err ? reject(err) : resolve()));
-      else resolve();
+    const rpcRes = await fetch(rpcUrl, { 
+        method:'POST', 
+        headers:{'Content-Type':'application/json', 'Authorization':`Basic ${auth}`}, 
+        body: rpcBody 
     });
+    const rpcJson = await rpcRes.json();
+    
+    if (rpcJson.error) throw new Error(JSON.stringify(rpcJson.error));
+    const txId = rpcJson.result;
 
-    // DB audit (best-effort)
-    try {
-      const p = await db();
-      await p.query(
-        `INSERT INTO payouts(address, amount_kibl, tx_id, session_id, ip, status)
-         VALUES ($1,$2,$3,$4,$5,'success')`,
-        [playerAddress, sendWholeKibl, txId, req.sessionID, req.ip]
-      );
-      // decrement both game balances to mirror session
-      if (deductPoker > 0) {
-        await p.query(
-          'UPDATE user_stats SET bank_minor = GREATEST(bank_minor - $2, 0), last_seen_at = now() WHERE user_id = $1',
-          [req.uid, deductPoker]
-        );
-      }
-      if (deductBJ > 0) {
-        await p.query(
-          'UPDATE user_stats_blackjack SET bank_minor = GREATEST(bank_minor - $2, 0), last_seen_at = now() WHERE user_id = $1',
-          [req.uid, deductBJ]
-        );
-      }
-    } catch (e) {
-      logger.error('payout bookkeeping failed', { e: String(e) });
-      // don’t fail the request; tokens are already sent
+    // 6. UPDATE STATE
+    req.session.wallet.poker = Math.max(0, pokerMinor - deductPoker);
+    req.session.wallet.blackjack = Math.max(0, bjMinor - deductBJ);
+    req.session.bank = req.session.wallet.poker + req.session.wallet.blackjack;
+    
+    // DB Update
+    if (hasDb) {
+        const p = await db();
+        await p.query(`INSERT INTO payouts(address, amount_kibl, tx_id, session_id, ip, status) VALUES ($1,$2,$3,$4,$5,'success')`, 
+            [targetAddress, sendWholeKibl, txId, req.sessionID, req.ip]);
+            
+        if (deductPoker > 0) await p.query('UPDATE user_stats SET bank_minor = GREATEST(bank_minor - $2, 0) WHERE user_id = $1', [req.uid, deductPoker]);
+        if (deductBJ > 0) await p.query('UPDATE user_stats_blackjack SET bank_minor = GREATEST(bank_minor - $2, 0) WHERE user_id = $1', [req.uid, deductBJ]);
     }
 
-    const remainingKibl = Math.floor((req.session.bank || 0) / 100);
     return res.json({
-      success: true,
-      txId,
-      sentKIBL: sendWholeKibl,
-      remainingKIBL: remainingKibl,
-      remainingByGame: {
-        poker:     Math.floor((req.session.wallet?.poker || 0) / 100),
-        blackjack: Math.floor((req.session.wallet?.blackjack || 0) / 100),
-        total:     remainingKibl
-      },
-      message: `Sent ${sendWholeKibl} KIBL to ${playerAddress}`
+        success: true,
+        txId,
+        sentKIBL: sendWholeKibl,
+        remainingKIBL: Math.floor(req.session.bank / 100)
     });
 
   } catch (error) {
-    logger.error('Token send failed', { error: String(error) });
-    return res.status(500).json({ error: 'Failed to send tokens due to a server issue. Please try again later.' });
+    logger.error('Payout failed', { error: String(error) });
+    return res.status(500).json({ error: 'Payout failed. Please try again.' });
   }
 });
-
 // =================== BLACKJACK ENGINE (non-wagering, points-driven) ===================
 
 function bjEnsure(req){
@@ -1447,7 +1585,14 @@ async function claimAndAwardBJ(
 }
 
 
-const bjStartLimiter  = rateLimit({ windowMs: 60_000, max: 40, standardHeaders:true, legacyHeaders:false });
+// ---- Rate limits for BJ actions
+const bjStartLimiter  = rateLimit({
+  windowMs: 60_000,
+  max: 40,
+  keyGenerator: (req) => req.uid || req.ip || 'nouid',
+  standardHeaders: true,
+  legacyHeaders: false
+});
 const bjActionLimiter = rateLimit({ windowMs: 60_000, max: 80, standardHeaders:true, legacyHeaders:false });
 
 

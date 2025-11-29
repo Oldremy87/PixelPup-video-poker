@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8"/>
+  <title>Fairness Verifier</title>
+  <style>
+    body{background:#0b0f19;color:#00ffc6;font-family:monospace;padding:20px;max-width:800px;margin:0 auto;}
+    input{width:100%;padding:10px;margin-bottom:15px;background:#111;border:1px solid #333;color:#fff;}
+    label{display:block;margin-bottom:5px;color:#7fffe6;}
+    .btn{background:#ffcc00;color:#000;padding:10px 20px;border:none;font-weight:bold;cursor:pointer;}
+    #result{margin-top:20px;white-space:pre-wrap;border:1px solid #3af5d9;padding:10px;}
+  </style>
+</head>
+<body>
+  <h1>👮 Fairness Verifier</h1>
+  <p>Paste your data below to verify the server didn't cheat.</p>
+  
+  <label>Server Seed (Revealed)</label>
+  <input type="text" id="sSeed" placeholder="hex string...">
+  
+  <label>Client Seed</label>
+  <input type="text" id="cSeed" placeholder="optional string...">
+  
+  <label>Hand ID</label>
+  <input type="text" id="hId" placeholder="uuid...">
+
+  <label>Game Mode</label>
+  <select id="mode" style="margin-bottom:15px;padding:5px;"><option value="poker">Poker</option><option value="bj">Blackjack</option></select>
+
+  <button onclick="verify()" class="btn">VERIFY HAND</button>
+
+  <div id="result"></div>
+
+  <script>
+    async function sha256(msg) {
+      const msgBuffer = new TextEncoder().encode(msg);
+      const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
+      return Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, '0')).join('');
+    }
+
+    async function verify() {
+      const sSeed = document.getElementById('sSeed').value.trim();
+      const cSeed = document.getElementById('cSeed').value.trim();
+      const hId = document.getElementById('hId').value.trim();
+      const mode = document.getElementById('mode').value;
+      
+      if (!sSeed || !hId) return alert('Missing Server Seed or Hand ID');
+
+      const seedString = `${sSeed}:${cSeed}:${hId}:${mode === 'poker' ? 'deal' : 'bj'}`;
+      
+      let out = `1. Construct Seed String:\n   "${seedString}"\n\n`;
+      let h = await sha256(seedString);
+      out += `2. Initial Hash (SHA256):\n   ${h}\n\n3. Generating Deck...\n`;
+
+      const suits = ['Clubs','Diamonds','Hearts','Spades'];
+      const ranks = ['Ace','2','3','4','5','6','7','8','9','10','Jack','Queen','King'];
+      let deck = [];
+      for(let s of suits) for(let r of ranks) deck.push(`${r} of ${s}`);
+
+      // Replicate Server Shuffle (Rejection Sampling Logic)
+      for (let i = deck.length - 1; i > 0; i--) {
+        const max = i + 1;
+        const limit = 0xFFFFFFFF - (0xFFFFFFFF % max);
+        let u32;
+        
+        // Loop until we get a number in the valid range (unbiased)
+        do {
+          h = await sha256(h);
+          u32 = parseInt(h.slice(0, 8), 16) >>> 0;
+        } while (u32 >= limit);
+
+        const j = u32 % max;
+        [deck[i], deck[j]] = [deck[j], deck[i]];
+      }
+
+      out += "--- SHUFFLED RESULT ---\n";
+      deck.slice(0,10).forEach((c,i) => out += `Card ${i+1}: ${c}\n`);
+      out += "...(remaining cards)";
+      
+      document.getElementById('result').textContent = out;
+    }
+  </script>
+</body>
+</html>

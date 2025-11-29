@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>PixelPup Video Poker</title>
   <script src="https://hcaptcha.com/1/api.js" async defer></script>
+
   <style>
     /* ===== Retro PixelPup theme (CSP-safe, no external fonts) ===== */
     :root{
@@ -637,7 +638,7 @@ body.compact {
   </a>
       <a class="btn btn-ghost" href="/"              class="kk-home" aria-label="Go to Home">🏠 Home</a>
      <a class = "btn btn-primary" href="blackjack.html">Play BlackJack</a>
-     
+     <a class = "btn btn-ghost" href="/connect.html" aria-current="page">Connect Wallet</a>
 
 
 
@@ -664,7 +665,7 @@ body.compact {
 
       <p id="userTag" class="readout"></p>
       <p id="fairInfo" class="readout"></p>
-      <button id="deal" class="btn btn-primary" disabled>Feed the dealer</button>
+      <button id="betBtn" class="btn btn-primary">Place 100 KIBL bet</button>
       <button id="draw" class="btn" disabled>Draw</button>
     </div>
     <div id="hand" class="card-hand" aria-live="polite"></div>
@@ -672,6 +673,8 @@ body.compact {
     <a class="btn btn-ghost" href="achievements.html">Achievements</a>
      <a class="btn btn-ghost" href="pointstable.html">Point Table</Table></a>
      <p id="payoutTotal">Total Payout: 0 KIBL</p>
+     <p id="kiblBalance">KIBL: —</p>
+     <p id="nexaBalance">NEXA: —</p>
   </div>
 
   <!-- RIGHT SIDEBAR: TOTAL + CLAIM + DAILY -->
@@ -689,48 +692,26 @@ body.compact {
     </div>
 <section id="claim" class="claim-block">
   <h2>Claim</h2>
-  <form class="faucet-form" id="faucetForm" onsubmit="return false;" autocomplete="off">
-    <div class="field">
-      <label for="addressInput">Wallet address</label>
-      <input
-  type="text"
-  id="addressInput"
-  placeholder="Enter your Nexa address (e.g., nexa:...)"
-  aria-label="Nexa address input"
-  required
-  spellcheck="false"
-  autocapitalize="off"
-  autocomplete="off"
-  inputmode="latin"
-/>
-
-    </div>
-    <div class="field">
-      <label>Human check</label>
-      <div id="payoutCaptcha" class="h-captcha"
-     data-sitekey="170a6dc4-35b6-4266-a2ce-6f3eb8c85d9c"
-     data-size="normal"></div>
-
-    </div>
+  
     <div class="row">
-      <button class="btn btn-primary" id="ClaimPayout" type="button" aria-label="Claim Payout">FEED ME! 🐾</button>
+       <a href="claim.html" class="btn btn-primary" style="width:100%; text-align:center;">
+      FEED ME! 🐾
+    </a>
 
-    </div>
-  </form>
-  <div id="loading" class="status" aria-live="polite" style="display:none;">Processing your request...</div>
-  <p id="result" aria-live="polite">Idle</p>
 </section>
       
     </div>
 
   <audio id="feedSound" src="dogfood.mp3" preload="auto"></audio>
   
+  
+ 
 <script>
+  window.KIBL_TOKEN_ID_HEX = "656bfefce8a0885acba5c809c5afcfbfa62589417d84d54108e6bb42a6f30000";
 
 document.addEventListener('DOMContentLoaded', async () => {
   try {
     await fetchCsrf();
-    dealBtn.disabled = false;
     await (window.loadProfile?.());
     await (window.loadLeaderboard?.());
   } catch {
@@ -859,6 +840,23 @@ function flashPayout(){
   // clean up after the glow ends
   setTimeout(() => payoutEl?.classList.remove('payout-win'), 1400);
 }
+async function loadWalletBalances(address) {
+  if (!address) return;
+  try {
+    const r = await fetch(`/api/wallet/balance?address=${encodeURIComponent(address)}`, { credentials: 'include' });
+    const j = await r.json();
+    if (!j?.ok) return;
+
+    const kiblEl = document.getElementById('kiblBalance');
+    if (kiblEl) kiblEl.textContent = `KIBL: ${j.kibl}`;
+
+    const nexaEl = document.getElementById('nexaBalance');
+    if (nexaEl) nexaEl.textContent = `NEXA: ${j.nexa}`;
+  } catch (e) {
+    console.error('loadWalletBalances failed:', e);  
+  }
+}
+
 
 function confettiBurst(count = 48, ms = 1800){
   const wrap = document.createElement('div');
@@ -883,6 +881,7 @@ function applyScaleFromSlider(){
   document.documentElement.style.setProperty('--ui-scale', String(scale));
   try { localStorage.setItem('kk_bj_scale', String(v)); } catch {}
 }
+
 
 // Compute a base card width that fits the widest row we can see
 function fitBjToScreen(){
@@ -1121,24 +1120,28 @@ async function loadLeaderboard(){
 }
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 const REVEAL_EXTRA_MS = 600 ; 
+// Replace your existing startGame function with this one
 async function startGame() {
   // 1) Start-hand gate FIRST
   let start;
   try {
     start = await postWithCsrf(API.start, {
-  method: 'POST',
-  credentials: 'include',
-});
-
+      method: 'POST',
+      credentials: 'include',
+    });
   } catch {
-    alert('Network error starting hand.'); return;
+    alert('Network error starting hand.'); 
+    return;
   }
+
   let startData;
   try { startData = await start.json(); } catch { startData = {}; }
+  
   if (startData?.commit && startData?.handId) {
-  const fi = document.getElementById('fairInfo');
-  if (fi) fi.textContent = `Commit: ${startData.commit.slice(0,10)}… (hand ${startData.handId.slice(0,8)})`;
-}
+    const fi = document.getElementById('fairInfo');
+    if (fi) fi.textContent = `Commit: ${startData.commit.slice(0,10)}… (hand ${startData.handId.slice(0,8)})`;
+  }
+
   if (!start.ok || !startData.ok) {
     if (startData?.error === 'ip_limit') {
       alert(`Play limit reached. Come back in ${formatWait(startData.retryMs)}.`);
@@ -1153,26 +1156,29 @@ async function startGame() {
   // 2) Simulated deal animation (keep visible ≥1.5s)
   const anim = showSimulatedDeal(1500);
   try { feedSound.currentTime = 0; feedSound.play(); } catch {}
-  dealBtn.disabled = true;
 
   // 3) Request the actual deal in parallel with the animation
-  const dealReq = postWithCsrf(API.deal, {method: 'POST',credentials: 'include'});
+  const dealReq = postWithCsrf(API.deal, { method: 'POST', credentials: 'include' });
+  
   try {
     const [resp] = await Promise.all([dealReq, anim]);
     const data = await resp.json();
+    
     if (!resp.ok || !data.ok) {
       alert('Deal failed: ' + (data.error || resp.statusText));
-      dealBtn.disabled = false;
       return;
     }
+    
     hand = data.hand || [];
     held = [false, false, false, false, false];
     renderHand();
-    drawBtn.disabled = false;
+    
+    // Enable the Draw button now that cards are dealt
+    if (drawBtn) drawBtn.disabled = false;
+
   } catch (e) {
     console.error(e);
     alert('Deal failed.');
-    dealBtn.disabled = false;
   }
 }
   
@@ -1191,7 +1197,7 @@ async function startGame() {
       });
 
       const img = document.createElement('img');
-      img.src = `cards/${card.filename}`;
+      img.src = `cards/${card.filename}?v=xmas`;
       img.alt = card.displayText;
 
       const label = document.createElement('p');
@@ -1257,7 +1263,13 @@ async function draw() {
     if (payoutEl) payoutEl.textContent = `Total Payout: ${balanceUnits} KIBL`;
     totalPayout = balanceUnits;
     if (payoutBtn) payoutBtn.disabled = (totalPayout === 0);
-    if (dealBtn)  dealBtn.disabled  = false;
+    const betBtn = document.getElementById('betBtn'); 
+    if (betBtn) {
+        betBtn.style.display = 'inline-flex'; // Show the bet button again
+        betBtn.disabled = false;
+        betBtn.textContent = 'Place 100 KIBL Bet';
+    }
+    
     if (drawBtn)  drawBtn.disabled  = true;
 
     // Let the browser paint the new hand (and decode images) before blocking alerts
@@ -1305,9 +1317,15 @@ async function onDailyReward() {
 });
     
     const data = await res.json();
-    if (!res.ok || !data.ok) {
-      const mins = data.retryInMs ? Math.ceil(data.retryInMs/60000) : 'later';
-      alert('Daily reward already claimed. Try again in ~' + mins + ' minutes.');
+    if (!data.ok){
+      // Check if it's actually the rate limit error
+      if (data.error === 'Daily reward already claimed.') {
+          const mins = data.retryInMs ? Math.ceil(data.retryInMs/60000) : 'later';
+          alert('Daily already claimed. Try again in ~' + mins + ' minutes.');
+      } else {
+          // Show the REAL error (e.g. "Link wallet..." or "RPC Error")
+          alert('Daily Reward Failed: ' + (data.error || 'Unknown error'));
+      }
       return;
     }
 
@@ -1320,7 +1338,6 @@ async function onDailyReward() {
     // Display server balance only (already /100)
     totalPayout = balanceUnits;
     if (payoutEl) payoutEl.textContent = `Total Payout: ${totalPayout} KIBL`;
-    payoutBtn.disabled = (totalPayout === 0);
   } catch (e) {
     console.error(e);
     alert('Failed to claim daily reward, please try again.');
@@ -1342,12 +1359,6 @@ async function onClaimPayout() {
     } catch {}
     if (totalPayout === 0) { alert('No payout to claim!'); return; }
  }
-
-  const playerAddress = addressInput.value.trim();
-  if (!/^nexa:/.test(playerAddress)) {
-    alert('Please enter a valid Nexa address (nexa:...)');
-    return;
-  }
 
   // Visible hCaptcha: ensure the user solved the challenge first
   const token = window.hcaptcha?.getResponse?.();
@@ -1385,7 +1396,6 @@ async function onClaimPayout() {
 
     totalPayout = data.remainingKIBL ?? 0;
     payoutEl.textContent = `Total Payout: ${totalPayout} KIBL`;
-    payoutBtn.disabled = (totalPayout === 0);
     // Reset so the user can claim again in the future
     try { window.hcaptcha?.reset?.(); } catch {}
 
@@ -1395,7 +1405,7 @@ async function onClaimPayout() {
     alert(e?.message || 'Payout failed. Try again.');
   } finally {
     hide(payoutLoading);
-    payoutBtn.disabled = (totalPayout === 0);
+    
   }
 }
 
@@ -1408,13 +1418,6 @@ async function onClaimPayout() {
   dailyRewardBtn?.addEventListener('click', onDailyReward);
   dealBtn?.addEventListener('click', startGame);
   drawBtn?.addEventListener('click', draw);
-  payoutBtn?.addEventListener('click', onClaimPayout);
-
-  // Minor UX: address field hint border
-  addressInput.addEventListener('input', () => {
-    const v = addressInput.value.trim();
-    addressInput.style.borderColor = (v && !/^nexa:/.test(v)) ? '#ff5555' : 'rgba(58,245,217,0.35)';
-  });
 
 (() => {
   const LS_KEY = 'ageVerified';
@@ -1449,7 +1452,7 @@ async function onClaimPayout() {
     document.body.style.overflow = '';
     document.removeEventListener('keydown', trapFocus);
   }
-
+  window.loadWalletBalances = loadWalletBalances;
   window.addEventListener('load', () => {
     // Respect previous confirmation
     const ok = localStorage.getItem(LS_KEY) === 'true' || sessionStorage.getItem(LS_KEY) === 'true';
@@ -1462,15 +1465,142 @@ async function onClaimPayout() {
     hideGate();
   });
 })();
-(function(){
+document.addEventListener('DOMContentLoaded', () => {
+  // --- How to Play (Dismiss Logic) ---
   const KEY = 'kk_vp_help_hidden';
-  const el  = document.getElementById('vpHow');
-  if (!el) return;
-  if (localStorage.getItem(KEY) === '1') el.hidden = true;
-  el.querySelector('.close')?.addEventListener('click', () => {
-    el.hidden = true; localStorage.setItem(KEY, '1');
+  const el = document.getElementById('vpHow');
+  
+  if (el) {
+    // 1. Check storage immediately to hide if needed
+    if (localStorage.getItem(KEY) === '1') {
+      el.style.display = 'none'; // Safer than .hidden = true for some CSS resets
+    }
+
+    // 2. Attach click listener safely
+    const closeBtn = el.querySelector('.close');
+    if (closeBtn) {
+      closeBtn.addEventListener('click', (e) => {
+        e.preventDefault(); // Stop any weird anchor behavior
+        el.style.display = 'none';
+        localStorage.setItem(KEY, '1');
+      });
+    }
+  }
+});
+</script>
+<script type="module">
+  import { placeBet } from "/assets/walletBet.bundle.js?v=20250303";
+  import { getSigner } from "/assets/wallet-modal.js?v=Christmas";
+  window.placeBet = placeBet;
+
+  // 1. Setup CSRF Helper
+  async function fetchCsrf() {
+    const r = await fetch('/api/csrf', { credentials: 'include' });
+    const j = await r.json();
+    window.csrfToken = j.csrfToken;
+    return j.csrfToken;
+  }
+
+  // 2. Setup Wallet Link Helper
+  async function ensureLinked() {
+    const r = await fetch('/api/wallet/status', { credentials: 'include' });
+    const j = await r.json().catch(() => null);
+    return j?.ok && j.linked ? j : null;
+  }
+
+  addEventListener('DOMContentLoaded', async () => {
+    await fetchCsrf(); // Init security token
+    
+    // Check wallet connection
+    const linked = await ensureLinked();
+    const betBtn = document.getElementById('betBtn');
+    const drawBtn = document.getElementById('draw');
+
+    // Setup initial button states
+    if (betBtn) {
+      betBtn.disabled = !linked;
+      betBtn.textContent = 'Place 100 KIBL Bet';
+    }
+    if (drawBtn) drawBtn.disabled = true; // Can't draw until we deal
+
+    if (linked?.address) {
+      window.loadWalletBalances?.(linked.address);
+    }
+
+    // --- SINGLE CLICK HANDLER FOR BETTING ---
+    betBtn?.addEventListener('click', async () => {
+      if (betBtn.disabled || betBtn.classList.contains('busy')) return;
+
+      try {
+        if (!linked) return alert('Link a wallet on the Connect page first.');
+
+        // Lock UI
+        betBtn.classList.add('busy');
+        betBtn.textContent = 'Signing...';
+        betBtn.disabled = true;
+
+        const passphrase = await getSigner();
+        if (!passphrase) throw new Error('Cancelled');
+
+        // 1. Send the Crypto (The "Fee")
+        const { txId } = await placeBet({
+          passphrase,
+          kiblAmount: 10000, 
+          tokenIdHex: window.KIBL_TOKEN_ID_HEX,
+          feeNexa: 600
+        });
+
+        toast(`Bet sent! Transaction: ${txId.slice(0, 8)}…`, { type: 'win' });
+        
+        // 2. Start the Game Logic (The "Deal")
+        betBtn.textContent = 'Dealing...';
+        
+        // We call the existing startGame() function you have defined globally
+        // This triggers /api/start-hand and /api/deal
+        await window.startGame(); 
+
+        // 3. Update UI for the "Draw" phase
+        betBtn.style.display = 'none'; // Hide bet button during the hand
+        drawBtn.disabled = false;      // Enable draw button
+        
+        // Refresh wallet balances
+        loadProfile();
+        if (linked?.address) loadWalletBalances(linked.address);
+
+      } catch (e) {
+        if (e.message !== 'Cancelled') {
+          toast(`Bet failed: ${e.message}`, { type: 'error' });
+          betBtn.disabled = false;
+          betBtn.textContent = 'Place 100 KIBL Bet';
+        } else {
+          betBtn.disabled = false;
+          betBtn.textContent = 'Place 100 KIBL Bet';
+        }
+      } finally {
+        betBtn.classList.remove('busy');
+      }
+    });
+
+    // --- HOOK INTO DRAW TO RESET ---
+    // We need to bring the Bet button back after the hand is over.
+    // Since draw() is global, we can attach a listener to the draw button
+    // to verify when it's done, or simpler: modify the global draw() to reset UI.
+    // For now, let's use a MutationObserver to see when draw disables itself.
+    const obs = new MutationObserver((mutations) => {
+      mutations.forEach((m) => {
+        if (m.attributeName === 'disabled' && drawBtn.disabled === true) {
+          // If draw became disabled, the hand is likely over. Show bet button again.
+          // Small delay to let the win animation play
+          setTimeout(() => {
+             betBtn.style.display = 'inline-flex';
+             betBtn.disabled = false;
+             betBtn.textContent = 'Place 100 KIBL Bet';
+          }, 2000);
+        }
+      });
+    });
+    obs.observe(drawBtn, { attributes: true });
   });
-})();
 </script>
 <footer style="opacity:.9;color:var(--text-dim);font-size:12px;text-align:center;padding:14px 0 6px;">
   © 2025 KIBL / PixelPup • Stay shiny 🐶✨ •

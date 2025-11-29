@@ -5,6 +5,18 @@
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
   <title>PixelPup Blackjack</title>
   <script src="https://hcaptcha.com/1/api.js" async defer></script>
+    <script>
+  // Make CSRF available to modules early
+  (async () => {
+    try {
+      const r = await fetch('/api/csrf', { credentials: 'include' });
+      const j = await r.json();
+      window.csrfToken = j.csrfToken;
+    } catch {}
+  })();
+</script>
+ 
+
   <style>
       /* ===== Retro PixelPup theme (CSP-safe, no external fonts) ===== */
     :root{
@@ -692,6 +704,7 @@ body.compact {
   </a>
       <a class="btn btn-ghost kk-home" href="/" aria-label="Go to Home">🏠 Home</a>
   <a class="btn btn-primary" href="/play.html" aria-current="page">Play Poker</a>
+  <a class = "btn btn-ghost" href="/connect.html" aria-current="page">Connect Wallet</a>
 </nav>
    <div class="brand">
       <div class="brand-badge">KK</div>
@@ -731,9 +744,13 @@ body.compact {
 
         <div class="readout">You</div>
         <p id="payoutTotal">Total Payout: 0 KIBL</p>
+     <p id="kiblBalance">KIBL: —</p>
+     <p id="nexaBalance">NEXA: —</p>
         <div id="bjPlayer" class="card-hand" aria-live="polite"></div>
 
         <div class="controls">
+          <button id="betBtn" class="btn">Place 100 KIBL bet</button>
+          
           <button id="bjStart"  class="btn btn-primary">Feed the dealer</button>
           <button id="bjHit"    class="btn" disabled>Hit</button>
           <button id="bjStand"  class="btn" disabled>Stand</button>
@@ -781,20 +798,11 @@ body.compact {
     <div class="readout" id="lbHint" style="margin-top:6px;"></div>
     <a class="btn btn-ghost" href="/leaderboard.html?game=blackjack">See full leaderboard →</a>
     <h2>Claim</h2>
-    <div class="field">
-      <label class="readout" for="addressInput">Wallet address</label>
-      <input id="addressInput" placeholder="nexa:..." style="width:100%; padding:10px 12px; border-radius:10px;
-             border:1px solid rgba(58,245,217,.35); background:#0f1425; color:var(--text)"/>
-    <div class="field">
-      <label class="readout">Human check</label>
-      <div id="payoutCaptcha" class="h-captcha"
-           data-sitekey="170a6dc4-35b6-4266-a2ce-6f3eb8c85d9c"
-           data-size="normal"></div>
-    <div class="controls">
-      <button id="ClaimPayout" class="btn btn-primary" type="button">FEED ME! 🐾</button>
+    <a href="claim.html" class="btn btn-primary" style="width:100%; text-align:center;">
+      FEED ME! 🐾
+    </a>
+     
     </div>
-    <div id="loading" class="readout" style="display:none;">Processing…</div>
-    <p id="result" class="readout">Idle</p>
   </section>
   
 </div>
@@ -805,90 +813,42 @@ body.compact {
 
   <audio id="feedSound" src="dogfood.mp3" preload="auto"></audio>
 
-  <script>
-    // ===== shared helpers (copied from play.html so this page is standalone) =====
-    let __csrf = null;
+  
+<script>
+  window.loadWalletBalances = async function(address) {
+  if (!address) return;
+  try {
+    const r = await fetch(`/api/wallet/balance?address=${encodeURIComponent(address)}`, { credentials: 'include' });
+    const j = await r.json();
+    if (!j?.ok) return;
+
+    const kiblEl = document.getElementById('kiblBalance');
+    if (kiblEl) kiblEl.textContent = `KIBL: ${j.kibl}`;
+
+    const nexaEl = document.getElementById('nexaBalance');
+    if (nexaEl) nexaEl.textContent = `NEXA: ${j.nexa}`;
+  } catch (e) {
+    console.error('loadWalletBalances failed:', e);  
+  }
+};
+document.addEventListener('DOMContentLoaded', async () => {
+  try {
+    await fetchCsrf();
+    await (window.loadProfile?.());
+    await (window.loadLeaderboard?.());
+  } catch {
+    alert('Could not initialize security token. Refresh to try again.');
+  }
+});
+
+ let __csrf = null;
     async function fetchCsrf(){
       const r = await fetch('/api/csrf', { credentials:'include' });
       if (!r.ok) throw new Error('CSRF bootstrap failed');
       const { csrfToken } = await r.json();
       __csrf = csrfToken;
     }
- // replace your postWithCsrf with this sturdier version
-async function postWithCsrf(url, body = {}) {
-  // if the token isn’t there yet, try once more
-  if (!window.csrfToken) {
-    await ensureCsrf();
-  }
-  const r = await fetch(url, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'CSRF-Token': window.csrfToken || ''
-    },
-    credentials: 'include',
-    body: JSON.stringify(body)
-  });
-  // Try to parse JSON even on non-200s so we can surface server errors
-  let j = null;
-  try { j = await r.json(); } catch {}
-  if (!r.ok || (j && j.ok === false)) {
-    const msg = (j && (j.error || j.message)) || `HTTP ${r.status}`;
-    throw new Error(msg);
-  }
-  return j;
-}
-
-async function ensureCsrf(){
-  try {
-    const r = await fetch('/api/csrf', { credentials: 'include' });
-    const j = await r.json();
-    window.csrfToken = j.csrfToken;
-  } catch {}
-}
-document.addEventListener('DOMContentLoaded', ensureCsrf);
-(function showHowtoOnce(){
-  const k = 'bj_seen_instructions_v1';
-  if (localStorage.getItem(k)) return;
-  const m = document.getElementById('bjHowto');
-  const b = document.getElementById('bjHowtoClose');
-  if (m && b) {
-    m.style.display = 'flex';
-    b.onclick = () => { m.style.display='none'; localStorage.setItem(k, '1'); };
-  }
-})();
-
-
-/* replace your ensureCsrf + DOMContentLoaded block with this */
-
-async function ensureCsrf() {
-  try {
-    const r = await fetch('/api/csrf', { credentials: 'include' });
-    const j = await r.json();
-    if (j && j.csrfToken) {
-      window.csrfToken = j.csrfToken;
-    }
-  } catch (e) {
-    console.warn('CSRF fetch failed', e);
-  }
-}
-
-document.addEventListener('DOMContentLoaded', async () => {
-  await ensureCsrf();                 // <-- make sure token is ready
-  showHowtoOnce();
-});
-// --- Size/fit controls ---
-const sizeSlider = document.getElementById('bjSize');
-const fitBtn     = document.getElementById('bjFit');
-
-function applyScaleFromSlider(){
-  const v = Math.max(80, Math.min(125, Number(sizeSlider?.value||100)));
-  const scale = v / 100;
-  document.documentElement.style.setProperty('--ui-scale', String(scale));
-  try { localStorage.setItem('kk_bj_scale', String(v)); } catch {}
-}
-
-// Compute a base card width that fits the widest row we can see
+    // --- RESTORED UI HELPER ---
 function fitBjToScreen(){
   const panel = document.getElementById('bjPanel');
   if (!panel) return;
@@ -910,46 +870,71 @@ function fitBjToScreen(){
   const base = Math.max(64, Math.min(perCard, 136)); // px
   document.documentElement.style.setProperty('--cardBaseW', base + 'px');
 }
-
-function initBjSizeUI(){
-  // Restore saved scale
-  try {
-    const saved = Number(localStorage.getItem('kk_bj_scale'));
-    if (sizeSlider && saved) sizeSlider.value = saved;
-  } catch {}
-  applyScaleFromSlider();
-  fitBjToScreen();
-
-  sizeSlider?.addEventListener('input', applyScaleFromSlider);
-  fitBtn?.addEventListener('click', fitBjToScreen);
-
-  // Re-fit on window resize
-  window.addEventListener('resize', fitBjToScreen);
-
-  // Re-fit whenever hands change (hit/stand/split/double)
-  const player = document.getElementById('bjPlayer');
-  const dealer = document.getElementById('bjDealer');
-  const mo = new MutationObserver(fitBjToScreen);
-  if (player) mo.observe(player, { childList:true, subtree:true });
-  if (dealer) mo.observe(dealer, { childList:true, subtree:true });
-}
-
-// Call once when the page boots (after DOM ready)
-initBjSizeUI();
-
-
-function showHowtoOnce() {
+// ---------------------------
+(function showHowtoOnce(){
   const k = 'bj_seen_instructions_v1';
   if (localStorage.getItem(k)) return;
   const m = document.getElementById('bjHowto');
   const b = document.getElementById('bjHowtoClose');
   if (m && b) {
     m.style.display = 'flex';
-    b.addEventListener('click', () => {
-      m.style.display = 'none';
-      localStorage.setItem(k, '1');
-    }, { once: true });
+    b.onclick = () => { m.style.display='none'; localStorage.setItem(k, '1'); };
   }
+})();
+async function loadWalletBalances(address) {
+  if (!address) return;
+  try {
+    const r = await fetch(`/api/wallet/balance?address=${encodeURIComponent(address)}`, { credentials: 'include' });
+    const j = await r.json();
+    if (!j?.ok) return;
+
+    const kiblEl = document.getElementById('kiblBalance');
+    if (kiblEl) kiblEl.textContent = `KIBL: ${j.kibl}`;
+
+    const nexaEl = document.getElementById('nexaBalance');
+    if (nexaEl) nexaEl.textContent = `NEXA: ${j.nexa}`;
+  } catch (e) {
+    console.error('loadWalletBalances failed:', e);  
+  }
+}
+async function postWithCsrf(url, body = {}) {
+  // Ensure we have a token
+  if (!window.csrfToken) {
+    const r = await fetch('/api/csrf', { credentials: 'include' });
+    const j = await r.json();
+    window.csrfToken = j.csrfToken;
+  }
+
+  const res = await fetch(url, {
+    method: 'POST',
+    credentials: 'include',
+    headers: {
+      'Content-Type': 'application/json',
+      'CSRF-Token': window.csrfToken, // Match the header expected by csurf/server
+      'x-csrf-token': window.csrfToken // Redundant backup
+    },
+    body: JSON.stringify(body)
+  });
+
+  // If token is stale (403), retry once
+  if (res.status === 403) {
+    const r = await fetch('/api/csrf', { credentials: 'include' });
+    const j = await r.json();
+    window.csrfToken = j.csrfToken;
+    
+    // Retry original request
+    return fetch(url, {
+      method: 'POST',
+      credentials: 'include',
+      headers: {
+        'Content-Type': 'application/json',
+        'CSRF-Token': window.csrfToken
+      },
+      body: JSON.stringify(body)
+    }).then(r => r.json());
+  }
+
+  return res.json();
 }
 
 function flashPayout(){
@@ -1000,6 +985,7 @@ function setChip(el, kind, text) {
   el.className = `chip ${kind}`;
   el.textContent = text;
 }
+
 
 function updatePlayerPanelFromSnapshot(data) {
   const pTotalsEl  = document.getElementById('playerTotals');
@@ -1100,11 +1086,10 @@ function updateBjPanels(snapshotJson) {
   payout:'/api/payout',
   bj: { start:'/api/bj/start', hit:'/api/bj/hit', stand:'/api/bj/stand', double:'/api/bj/double', split:'/api/bj/split' }
 });
+  window.KIBL_TOKEN_ID_HEX = "656bfefce8a0885acba5c809c5afcfbfa62589417d84d54108e6bb42a6f30000";
 
 
     const payoutEl = document.getElementById('payoutTotal');
-    const payoutBtn = document.getElementById('ClaimPayout');
-    const addressInput = document.getElementById('addressInput');
     const dailyBtn = document.getElementById('dailyReward');
     const loading  = document.getElementById('loading');
 
@@ -1172,7 +1157,6 @@ fitBjToScreen();
     btnStart.disabled = true;
   }
 }
-
     function setButtons({ deal, hit, stand }) {
     const btnStart = document.getElementById('bjStart');
     const btnHit   = document.getElementById('bjHit');
@@ -1246,7 +1230,6 @@ function toast(html, { type = 'info', timeout = 2500 } = {}) {
 
   payoutEl.textContent = `Total Payout: ${balanceUnits} KIBL`;
   totalPayout = balanceUnits;
-  payoutBtn.disabled = (totalPayout === 0);
   // Always refresh profile + leaderboard so numbers are current
   loadProfile();
   loadLeaderboard();
@@ -1259,7 +1242,6 @@ function toast(html, { type = 'info', timeout = 2500 } = {}) {
     const bankUnits = Math.floor((d.bank||0)/100);
     totalPayout = bankUnits;
     payoutEl.textContent = `Total Payout: ${bankUnits} KIBL`;
-    payoutBtn.disabled = (totalPayout === 0);
       // NEW: show player tag
   const tagEl = document.getElementById('userTag');
   if (tagEl && d.displayId) tagEl.textContent = `Your tag: ${d.displayId}`;
@@ -1273,7 +1255,7 @@ function toast(html, { type = 'info', timeout = 2500 } = {}) {
     function cardEl(card, faceDown=false){
       const div = document.createElement('div'); div.className='card';
       const img = document.createElement('img');
-      img.src = faceDown ? 'cards/card-back.png' : `cards/${card.filename}`;
+      img.src = faceDown ? 'cards/card-back.png' : `cards/${card.filename}?v=xmas`;
       img.alt = faceDown ? 'Hidden card' : card.displayText;
       div.appendChild(img);
       return div;
@@ -1408,15 +1390,21 @@ async function split(){
   try{
     const data = await postWithCsrf(API.daily, {});
     if (!data.ok){
-      const mins = data.retryInMs ? Math.ceil(data.retryInMs/60000) : 'later';
-      alert('Daily already claimed. Try again in ~' + mins + ' minutes.');
+      // Check if it's actually the rate limit error
+      if (data.error === 'Daily reward already claimed.') {
+          const mins = data.retryInMs ? Math.ceil(data.retryInMs/60000) : 'later';
+          alert('Daily already claimed. Try again in ~' + mins + ' minutes.');
+      } else {
+          // Show the REAL error (e.g. "Link wallet..." or "RPC Error")
+          alert('Daily Reward Failed: ' + (data.error || 'Unknown error'));
+      }
       return;
     }
     const creditUnits  = Math.floor((data.credit||0)/100);
     const balanceUnits = Math.floor((data.sessionBalance||0)/100);
     alert(`Daily reward claimed: +${creditUnits} KIBL`);
     payoutEl.textContent = `Total Payout: ${balanceUnits} KIBL`;
-    totalPayout = balanceUnits; payoutBtn.disabled = (totalPayout===0);
+    totalPayout = balanceUnits;
   } catch(e){
     alert(`Daily failed: ${e.message || e}`);
   }
@@ -1454,7 +1442,6 @@ async function onPayout(){
     btnHit.addEventListener('click',   hit);
     btnStand.addEventListener('click', stand);
     dailyBtn.addEventListener('click', onDaily);
-    payoutBtn.addEventListener('click', onPayout);
     btnDouble.addEventListener('click', doubleDown);
     btnSplit .addEventListener('click', split);
 
@@ -1511,6 +1498,113 @@ async function onPayout(){
 
 
   </script>
+<script type="module">
+  import { placeBet } from '/assets/walletBet.bundle.js?v=Christmas';
+  import { getSigner } from "/assets/wallet-modal.js?v=Christmas";
+  window.placeBet = placeBet;
+
+  // 1. BRIDGE: Called by Game Logic when round ends
+  window.onGameSettled = async () => {
+      const btn = document.getElementById('betBtn');
+      if (btn) {
+          // RESET THE BUTTON COMPLETELY
+          btn.style.display = 'inline-flex';
+          btn.disabled = false;
+          btn.textContent = 'Place 100 KIBL Bet';
+          btn.classList.remove('busy'); 
+      }
+      
+      // Refresh balance
+      const linked = await fetch('/api/wallet/status').then(r=>r.json()).catch(()=>({}));
+      if (linked?.address && window.loadWalletBalances) {
+          window.loadWalletBalances(linked.address);
+      }
+  };
+
+  // 2. SETUP
+  async function fetchCsrf() {
+    try {
+      const r = await fetch('/api/csrf', { credentials: 'include' });
+      const j = await r.json();
+      window.csrfToken = j.csrfToken;
+    } catch (e) { console.error("CSRF Init Failed", e); }
+  }
+
+  async function ensureLinked() {
+    const r = await fetch('/api/wallet/status', { credentials: 'include' });
+    const j = await r.json().catch(() => null);
+    return j?.ok && j.linked ? j : null;
+  }
+
+  addEventListener('DOMContentLoaded', async () => {
+    await fetchCsrf();
+    const linked = await ensureLinked();
+    const btn = document.getElementById('betBtn');
+    const oldStart = document.getElementById('bjStart');
+    
+    if (oldStart) oldStart.style.display = 'none';
+
+    if (btn) {
+      btn.disabled = !linked;
+      btn.textContent = linked ? 'Place 100 KIBL Bet' : 'Connect Wallet to Play';
+      if (!linked) {
+         btn.onclick = () => window.location.href = '/connect.html';
+         return; 
+      }
+    }
+
+    if (linked?.address && window.loadWalletBalances) {
+      window.loadWalletBalances(linked.address);
+    }
+
+    btn?.addEventListener('click', async () => {
+      if (btn.classList.contains('busy')) return;
+
+      try {
+        btn.classList.add('busy');
+        btn.textContent = 'Unlocking...';
+        const pass = await getSigner();
+        
+        btn.textContent = 'Signing...';
+        const { txId } = await placeBet({
+          passphrase: pass,
+          kiblAmount: 100000, 
+          tokenIdHex: window.KIBL_TOKEN_ID_HEX,
+          feeNexa: 600
+        });
+
+        if (window.toast) window.toast(`Bet sent!`, { type: 'win' });
+        
+        // --- VISUAL UPDATE ---
+        btn.textContent = 'Dealing...';
+        
+        // CRITICAL FIX: Hide button immediately. 
+        // User plays the game using Hit/Stand buttons.
+        // When game ends, onGameSettled() brings this button back.
+        btn.style.display = 'none'; 
+
+        await window.startRound(); 
+        
+        // Refresh wallet balances
+        loadProfile();
+        if (linked?.address) loadWalletBalances(linked.address);
+
+      } catch (e) {
+        if (e.message !== 'Cancelled') {
+           if(window.toast) window.toast(`Bet failed: ${e.message}`, { type: 'error' });
+           else alert(e.message);
+        }
+        // ERROR RECOVERY: Bring button back if bet failed
+        btn.style.display = 'inline-flex';
+        btn.textContent = 'Place 100 KIBL Bet';
+        btn.disabled = false;
+        btn.classList.remove('busy');
+      } 
+      // Note: We intentionally DO NOT remove 'busy' here on success.
+      // The button is hidden anyway. onGameSettled cleans it up.
+    });
+  });
+</script>
 
   <footer class="readout" style="text-align:center; opacity:.9; padding:14px 0 6px;">
     © 2025 KIBL / PixelPup • Stay shiny 🐶✨ •
