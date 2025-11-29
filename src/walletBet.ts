@@ -21,10 +21,25 @@ const MAINNET = {
   port: 20004,
 };
 async function connectMainnet(rostrumProvider: any) {
-  // reuse a global flag to avoid duplicate connects across hot reloads
-  if ((globalThis as any).__kk_rostrum_mainnet_ok) return;
-  await rostrumProvider.connect(MAINNET); // explicit mainnet endpoint
-  (globalThis as any).__kk_rostrum_mainnet_ok = true;
+  // If already connected, skip
+  if ((globalThis as any).__kk_rostrum_mainnet_ok && rostrumProvider.isConnected) return;
+
+  for (let i = 0; i < 3; i++) {
+    try {
+      // Force disconnect if we are in a bad state
+      if (i > 0) try { await rostrumProvider.disconnect(); } catch {}
+      
+      console.log(`[Rostrum] Connecting... (Attempt ${i+1})`);
+      await rostrumProvider.connect(MAINNET);
+      
+      (globalThis as any).__kk_rostrum_mainnet_ok = true;
+      return; // Success!
+    } catch (e) {
+      console.warn(`[Rostrum] Connection failed (Attempt ${i+1}):`, e);
+      if (i === 2) throw e; // Give up on last try
+      await new Promise(r => setTimeout(r, 1000)); // Wait 1s
+    }
+  }
 }
 
 function getWalletCtor(mod: any) {

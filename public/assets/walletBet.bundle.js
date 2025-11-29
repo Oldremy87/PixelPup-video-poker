@@ -14,9 +14,23 @@ const MAINNET = {
   port: 20004
 };
 async function connectMainnet(rostrumProvider) {
-  if (globalThis.__kk_rostrum_mainnet_ok) return;
-  await rostrumProvider.connect(MAINNET);
-  globalThis.__kk_rostrum_mainnet_ok = true;
+  if (globalThis.__kk_rostrum_mainnet_ok && rostrumProvider.isConnected) return;
+  for (let i = 0; i < 3; i++) {
+    try {
+      if (i > 0) try {
+        await rostrumProvider.disconnect();
+      } catch {
+      }
+      console.log(`[Rostrum] Connecting... (Attempt ${i + 1})`);
+      await rostrumProvider.connect(MAINNET);
+      globalThis.__kk_rostrum_mainnet_ok = true;
+      return;
+    } catch (e) {
+      console.warn(`[Rostrum] Connection failed (Attempt ${i + 1}):`, e);
+      if (i === 2) throw e;
+      await new Promise((r) => setTimeout(r, 1e3));
+    }
+  }
 }
 function getWalletCtor(mod) {
   return mod?.Wallet ?? mod?.default?.Wallet;
