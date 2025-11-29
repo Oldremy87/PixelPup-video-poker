@@ -1498,22 +1498,20 @@ async function onPayout(){
 
 
   </script>
-<script type="module">
+ <script type="module">
   import { placeBet } from '/assets/walletBet.bundle.js?v=Christmas';
   import { getSigner } from "/assets/wallet-modal.js?v=Christmas";
   window.placeBet = placeBet;
 
-  // 1. BRIDGE: Called by Game Logic when round ends
+  // 1. BRIDGE: Called by Game Logic when round ends (Win/Loss/BJ)
   window.onGameSettled = async () => {
       const btn = document.getElementById('betBtn');
+      // Show button immediately
       if (btn) {
-          // RESET THE BUTTON COMPLETELY
           btn.style.display = 'inline-flex';
           btn.disabled = false;
           btn.textContent = 'Place 100 KIBL Bet';
-          btn.classList.remove('busy'); 
       }
-      
       // Refresh balance
       const linked = await fetch('/api/wallet/status').then(r=>r.json()).catch(()=>({}));
       if (linked?.address && window.loadWalletBalances) {
@@ -1568,24 +1566,15 @@ async function onPayout(){
         btn.textContent = 'Signing...';
         const { txId } = await placeBet({
           passphrase: pass,
-          kiblAmount: 100000, 
+          kiblAmount: 10000, 
           tokenIdHex: window.KIBL_TOKEN_ID_HEX,
           feeNexa: 600
         });
 
         if (window.toast) window.toast(`Bet sent!`, { type: 'win' });
-        
-        // --- VISUAL UPDATE ---
-        btn.textContent = 'Dealing...';
-        
-        // CRITICAL FIX: Hide button immediately. 
-        // User plays the game using Hit/Stand buttons.
-        // When game ends, onGameSettled() brings this button back.
-        btn.style.display = 'none'; 
-
+        betBtn.textContent = 'Dealing...';
         await window.startRound(); 
-        
-        // Refresh wallet balances
+         // Refresh wallet balances
         loadProfile();
         if (linked?.address) loadWalletBalances(linked.address);
 
@@ -1593,15 +1582,19 @@ async function onPayout(){
         if (e.message !== 'Cancelled') {
            if(window.toast) window.toast(`Bet failed: ${e.message}`, { type: 'error' });
            else alert(e.message);
-        }
-        // ERROR RECOVERY: Bring button back if bet failed
+           // Restore button on error
         btn.style.display = 'inline-flex';
         btn.textContent = 'Place 100 KIBL Bet';
         btn.disabled = false;
+        }
+        else {
+          betBtn.disabled = false;
+          betBtn.textContent = 'Place 100 KIBL Bet';
+        }
+ 
+      } finally {
         btn.classList.remove('busy');
-      } 
-      // Note: We intentionally DO NOT remove 'busy' here on success.
-      // The button is hidden anyway. onGameSettled cleans it up.
+      }
     });
   });
 </script>
