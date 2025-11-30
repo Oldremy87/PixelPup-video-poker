@@ -1509,11 +1509,11 @@ async function onPayout(){
 
   </script>
  <script type="module">
-  import { placeBet } from "/assets/walletBet.bundle.js?v=20250303v2";
-  import { getSigner } from "/assets/wallet-modal.js?v=Christmasv2";
+  import { placeBet } from "/assets/walletBet.bundle.js?v=20250303";
+  import { getSigner } from "/assets/wallet-modal.js?v=Christmas";
   window.placeBet = placeBet;
 
-  // 1. Setup CSRF Helper
+  // 1. Setup
   async function fetchCsrf() {
     try {
       const r = await fetch('/api/csrf', { credentials: 'include' });
@@ -1522,56 +1522,37 @@ async function onPayout(){
     } catch (e) { console.error("CSRF Init Failed", e); }
   }
 
-  // 2. Setup Wallet Link Helper
   async function ensureLinked() {
     const r = await fetch('/api/wallet/status', { credentials: 'include' });
     const j = await r.json().catch(() => null);
     return j?.ok && j.linked ? j : null;
   }
 
-  // 3. BRIDGE: Called by Game Logic when round ends
-  window.onGameSettled = async () => {
-      const btn = document.getElementById('betBtn');
-      // Force reset button state
-      if (btn) {
-          btn.style.display = 'inline-flex';
-          btn.disabled = false;
-          btn.textContent = 'Place 100 KIBL Bet';
-          btn.classList.remove('busy'); 
-      }
-      // Refresh balance
-      const linked = await fetch('/api/wallet/status').then(r=>r.json()).catch(()=>({}));
-      if (linked?.address && window.loadWalletBalances) {
-          window.loadWalletBalances(linked.address);
-      }
-  };
-
   addEventListener('DOMContentLoaded', async () => {
     await fetchCsrf();
     
-    // Check wallet connection
     const linked = await ensureLinked();
-    const betBtn = document.getElementById('betBtn'); // Using consistent name 'betBtn'
-    const drawBtn = document.getElementById('draw');
+    const betBtn = document.getElementById('betBtn');
     const depositBtn = document.getElementById('depositBtn');
     const navConnect = document.getElementById('navConnect');
     const oldStart = document.getElementById('bjStart');
+    const statusMsg = document.getElementById('bjStatus');
 
     // Cleanup UI
     if (oldStart) oldStart.style.display = 'none';
     if (linked && navConnect) navConnect.style.display = 'none';
     
-    // Only show deposit if wallet is actually linked
+    // Deposit Button
     if (linked?.address && depositBtn) {
         depositBtn.style.display = 'inline-flex'; 
         depositBtn.onclick = () => {
             navigator.clipboard.writeText(linked.address)
-                .then(() => alert(`Address Copied!\n\n${linked.address}\n\nSend KIBL (and a little NEXA for gas) to this address to play.`))
+                .then(() => alert(`Address Copied!\n\n${linked.address}`))
                 .catch(() => prompt("Copy your address:", linked.address)); 
         };
     }
     
-    // Setup initial button states
+    // Setup Bet Button
     if (betBtn) {
       betBtn.disabled = !linked;
       betBtn.textContent = linked ? 'Place 100 KIBL Bet' : 'Connect Wallet to Play';
@@ -1581,74 +1562,85 @@ async function onPayout(){
       }
     }
 
-    if (linked?.address) {
-      window.loadWalletBalances?.(linked.address);
+    if (linked?.address && window.loadWalletBalances) {
+      window.loadWalletBalances(linked.address);
     }
 
-    // --- SINGLE CLICK HANDLER FOR BETTING ---
+    // --- BETTING HANDLER ---
     betBtn?.addEventListener('click', async () => {
       if (betBtn.disabled || betBtn.classList.contains('busy')) return;
 
       try {
-        if (!linked) return alert('Link a wallet on the Connect page first.');
-
         // Lock UI
         betBtn.classList.add('busy');
         betBtn.textContent = 'Unlocking...';
-        // We don't disable it here, we rely on the 'busy' class to prevent double clicks
-        // so we can change text freely.
-
+        
         const passphrase = await getSigner();
         if (!passphrase) throw new Error('Cancelled');
 
-        // 1. Send the Crypto
+        // Send Bet
         betBtn.textContent = 'Signing...';
-        
         const { txId } = await placeBet({
           passphrase,
-          kiblAmount: 100000, // Blackjack uses 100 KIBL (100,000 minor)
+          kiblAmount: 100000, // 100 KIBL
           tokenIdHex: window.KIBL_TOKEN_ID_HEX,
           feeNexa: 600
         });
 
         if (window.toast) toast(`Bet sent!`, { type: 'win' });
         
-        // 2. Start the Game Logic
-        // CRITICAL: Hide button NOW so "Signing" doesn't get stuck visible
+        // CRITICAL: Hide button immediately so game UI takes over
         betBtn.style.display = 'none'; 
-        betBtn.textContent = 'Dealing...'; // Reset text for next time
-        
+        betBtn.textContent = 'Dealing...'; 
+
         await window.startRound(); 
         
-        // Refresh wallet balances
+        // Refresh wallet
         loadProfile();
         if (linked?.address) loadWalletBalances(linked.address);
 
       } catch (e) {
-        // 1. Safe Error Extraction
-        const msg = e ? (e.message || String(e)) : 'Unknown error occurred';
-        
-        // 2. Filter out "Cancelled" (User closed modal)
+        const msg = e ? (e.message || String(e)) : 'Unknown error';
         if (msg !== 'Cancelled' && !msg.includes('User rejected')) {
            if(window.toast) window.toast(`Bet failed: ${msg}`, { type: 'error' });
            else alert(msg);
         }
-        
-        // 3. ALWAYS restore the button on error
-        if (betBtn) {
-             betBtn.style.display = 'inline-flex';
-             betBtn.textContent = 'Place 100 KIBL Bet';
-             betBtn.disabled = false;
-             betBtn.classList.remove('busy');
-        }
-
-      } 
-      // Note: We DO NOT remove 'busy' in finally{} for success cases,
-      // because the button is hidden and onGameSettled() handles the full reset.
+        // Restore button on error
+        betBtn.style.display = 'inline-flex';
+        betBtn.textContent = 'Place 100 KIBL Bet';
+        betBtn.disabled = false;
+        betBtn.classList.remove('busy');
+      }
     });
+
+    // --- THE POKER-STYLE OBSERVER ---
+    // This watches the status text. When it sees "Round settled" or a Win/Loss, 
+    // it brings the button back.
+    const obs = new MutationObserver(() => {
+        const text = statusMsg.textContent || "";
+        // Check for ANY Game Over keywords
+        if (text.includes('settled') || text.includes('Win') || text.includes('Loss') || text.includes('Blackjack') || text.includes('Push')) {
+            
+            // Small delay to let the user see the result
+            setTimeout(() => {
+                if (betBtn.style.display === 'none') {
+                    betBtn.style.display = 'inline-flex';
+                    betBtn.disabled = false;
+                    betBtn.textContent = 'Place 100 KIBL Bet';
+                    betBtn.classList.remove('busy');
+                    
+                    // Final balance check
+                    if (linked?.address && window.loadWalletBalances) window.loadWalletBalances(linked.address);
+                }
+            }, 1000);
+        }
+    });
+    
+    if (statusMsg) {
+        obs.observe(statusMsg, { childList: true, subtree: true, characterData: true });
+    }
   });
 </script>
-
   <footer class="readout" style="text-align:center; opacity:.9; padding:14px 0 6px;">
     © 2025 KIBL / PixelPup • Stay shiny 🐶✨ •
     <a href="tos.html">Terms</a> • <a href="privacy.html">Privacy</a> • <a href="disclaimer.html">Disclaimer</a>
