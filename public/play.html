@@ -1488,8 +1488,8 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 </script>
 <script type="module">
-  import { placeBet } from "/assets/walletBet.bundle.js?v=Christmas";
-  import { getSigner } from "/assets/wallet-modal.js?v=Christmas";
+  import { placeBet } from "/assets/walletBet.bundle.js?v=2025030355";
+  import { getSigner } from "/assets/wallet-modal.js?v=Christmasv2";
   window.placeBet = placeBet;
 
   // 1. Setup CSRF Helper
@@ -1527,10 +1527,7 @@ const depositBtn = document.getElementById('depositBtn');
                 .catch(() => prompt("Copy your address:", linked.address)); // Fallback
         };
     }
-    const navConnect = document.getElementById('navConnect');
-    if (linked && navConnect) {
-        navConnect.style.display = 'none';
-    }
+    
     // Setup initial button states
     if (betBtn) {
       betBtn.disabled = !linked;
@@ -1591,7 +1588,9 @@ const depositBtn = document.getElementById('depositBtn');
           betBtn.disabled = false;
           betBtn.textContent = 'Place 100 KIBL Bet';
         }
-      } 
+      } finally {
+        betBtn.classList.remove('busy');
+      }
     });
 
     // --- HOOK INTO DRAW TO RESET ---
