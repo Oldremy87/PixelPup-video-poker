@@ -1142,7 +1142,7 @@ const rewardLimiter = rateLimit({ windowMs: 60 * 1000, max: 12, standardHeaders:
 app.post('/api/daily-reward', async (req, res) => {
   const ip = (typeof getClientIp === 'function') ? getClientIp(req) : req.ip;
   const uid = req.uid; // From session
-  const FAUCET_AMOUNT = 1000 * 100; // 1,000 KIBL (in minor units)
+  const FAUCET_AMOUNT = 10000 * 100; // 10,000 KIBL (in minor units)
   
   const COOLDOWN = 24 * 60 * 60 * 1000; 
 
