@@ -704,7 +704,7 @@ body.compact {
   </a>
       <a class="btn btn-ghost kk-home" href="/" aria-label="Go to Home">🏠 Home</a>
   <a class="btn btn-primary" href="/play.html" aria-current="page">Play Poker</a>
-  <a class = "btn btn-ghost" href="/connect.html" aria-current="page">Connect Wallet</a>
+  <a id="navConnect" class="btn btn-ghost" href="/connect.html" aria-current="page">Connect Wallet</a>
 </nav>
    <div class="brand">
       <div class="brand-badge">KK</div>
@@ -1550,7 +1550,10 @@ async function onPayout(){
     const btn = document.getElementById('betBtn');
     const oldStart = document.getElementById('bjStart');
     const depositBtn = document.getElementById('depositBtn');
-    
+    const navConnect = document.getElementById('navConnect');
+    if (linked && navConnect) {
+        navConnect.style.display = 'none';
+    }
     // Only show if wallet is actually linked
     if (linked?.address && depositBtn) {
         depositBtn.style.display = 'inline-flex'; // Make visible

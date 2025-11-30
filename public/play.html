@@ -638,7 +638,7 @@ body.compact {
   </a>
       <a class="btn btn-ghost" href="/"              class="kk-home" aria-label="Go to Home">🏠 Home</a>
      <a class = "btn btn-primary" href="blackjack.html">Play BlackJack</a>
-     <a class = "btn btn-ghost" href="/connect.html" aria-current="page">Connect Wallet</a>
+    <a id="navConnect" class="btn btn-ghost" href="/connect.html" aria-current="page">Connect Wallet</a>
 
 
 
@@ -1526,6 +1526,10 @@ const depositBtn = document.getElementById('depositBtn');
                 .then(() => alert(`Address Copied!\n\n${linked.address}\n\nSend KIBL (and a little NEXA for gas) to this address to play.`))
                 .catch(() => prompt("Copy your address:", linked.address)); // Fallback
         };
+    }
+    const navConnect = document.getElementById('navConnect');
+    if (linked && navConnect) {
+        navConnect.style.display = 'none';
     }
     // Setup initial button states
     if (betBtn) {
