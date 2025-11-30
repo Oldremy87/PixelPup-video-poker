@@ -743,6 +743,9 @@ body.compact {
         <div id="bjDealer" class="card-hand" aria-live="polite"></div>
 
         <div class="readout">You</div>
+        <button id="depositBtn" class="btn btn-ghost" style="display:none; font-size:12px; margin-bottom: 10px; width: 100%;">
+  ⬇️ Show Deposit Address
+</button>
         <p id="payoutTotal">Total Payout: 0 KIBL</p>
      <p id="kiblBalance">KIBL: —</p>
      <p id="nexaBalance">NEXA: —</p>
@@ -1546,7 +1549,19 @@ async function onPayout(){
     const linked = await ensureLinked();
     const btn = document.getElementById('betBtn');
     const oldStart = document.getElementById('bjStart');
+    const depositBtn = document.getElementById('depositBtn');
     
+    // Only show if wallet is actually linked
+    if (linked?.address && depositBtn) {
+        depositBtn.style.display = 'inline-flex'; // Make visible
+        
+        depositBtn.onclick = () => {
+            // Copy address to clipboard
+            navigator.clipboard.writeText(linked.address)
+                .then(() => alert(`Address Copied!\n\n${linked.address}\n\nSend KIBL (and a little NEXA for gas) to this address to play.`))
+                .catch(() => prompt("Copy your address:", linked.address)); // Fallback
+        };
+    }
     if (oldStart) oldStart.style.display = 'none';
 
     if (btn) {

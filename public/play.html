@@ -672,6 +672,9 @@ body.compact {
     <p class="readout">Tap a card to keep it for the draw.</p>
     <a class="btn btn-ghost" href="achievements.html">Achievements</a>
      <a class="btn btn-ghost" href="pointstable.html">Point Table</Table></a>
+     <button id="depositBtn" class="btn btn-ghost" style="display:none; font-size:11px;">
+  ⬇️ Deposit / Show Address
+</button>
      <p id="payoutTotal">Total Payout: 0 KIBL</p>
      <p id="kiblBalance">KIBL: —</p>
      <p id="nexaBalance">NEXA: —</p>
@@ -1511,7 +1514,19 @@ document.addEventListener('DOMContentLoaded', () => {
     const linked = await ensureLinked();
     const betBtn = document.getElementById('betBtn');
     const drawBtn = document.getElementById('draw');
-
+const depositBtn = document.getElementById('depositBtn');
+    
+    // Only show if wallet is actually linked
+    if (linked?.address && depositBtn) {
+        depositBtn.style.display = 'inline-flex'; // Make visible
+        
+        depositBtn.onclick = () => {
+            // Copy address to clipboard
+            navigator.clipboard.writeText(linked.address)
+                .then(() => alert(`Address Copied!\n\n${linked.address}\n\nSend KIBL (and a little NEXA for gas) to this address to play.`))
+                .catch(() => prompt("Copy your address:", linked.address)); // Fallback
+        };
+    }
     // Setup initial button states
     if (betBtn) {
       betBtn.disabled = !linked;
