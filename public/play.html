@@ -1515,7 +1515,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const betBtn = document.getElementById('betBtn');
     const drawBtn = document.getElementById('draw');
 const depositBtn = document.getElementById('depositBtn');
-    
+    const navConnect = document.getElementById('navConnect');
     // Only show if wallet is actually linked
     if (linked?.address && depositBtn) {
         depositBtn.style.display = 'inline-flex'; // Make visible
@@ -1527,7 +1527,7 @@ const depositBtn = document.getElementById('depositBtn');
                 .catch(() => prompt("Copy your address:", linked.address)); // Fallback
         };
     }
-    
+    if (linked && navConnect) navConnect.style.display = 'none';
     // Setup initial button states
     if (betBtn) {
       betBtn.disabled = !linked;
@@ -1578,7 +1578,7 @@ const depositBtn = document.getElementById('depositBtn');
         // Refresh wallet balances
         loadProfile();
         if (linked?.address) loadWalletBalances(linked.address);
-        
+
       } catch (e) {
         // 1. Safe Error Extraction
         const msg = e ? (e.message || String(e)) : 'Unknown error occurred';
