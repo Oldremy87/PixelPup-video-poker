@@ -249,7 +249,7 @@ app.use((req, _res, next) => {
 
 const HANDS_WINDOW_MS  = SIX_HOURS_MS;
 const TOKENS_PER_CREDIT = Number(process.env.TOKENS_PER_CREDIT || 1); // tokens per 1 credit
-const HANDS_LIMIT = Math.max(1, Number(process.env.IP_HANDS_PER_6H)) || 40;
+const HANDS_LIMIT = Math.max(1, Number(process.env.IP_HANDS_PER_6H)) || 1000;
 const HANDS_LIMIT_POKER = Number(process.env.IP_HANDS_PER_6H_POKER || HANDS_LIMIT);
 const HANDS_LIMIT_BJ    = Number(process.env.IP_HANDS_PER_6H_BJ    || HANDS_LIMIT);
 const WINDOW_MS   = 6 * 60 * 60 * 1000;
@@ -729,39 +729,49 @@ const kiblAvail = Number(tokenBals[KIBL_GROUP_HEX]?.confirmed || 0);
 
 app.post('/api/tx/broadcast', async (req, res) => {
   try {
-    await rostrumProvider.connect({
-      scheme: 'wss',
-      host: 'electrum.nexa.org',
-      port: 20004,
-    });
-
     const { hex } = req.body || {};
     if (!hex || typeof hex !== 'string') {
-      console.log('[broadcast] bad hex', typeof hex, hex?.length);
       return res.status(400).json({ ok: false, error: 'bad_hex' });
     }
 
-    // 2. Initialize WatchOnlyWallet matching your "build-unsigned" syntax
-    // We use a dummy address here because we are just relaying a signed message.
-    const network = 'mainnet';
-    const dummyAddress = 'nexa:nqtsq5g5pvucuzm2kh92kqtxy5s3zfutq3xgnhh5src65fc3'; // House or burn addr
+    // 1. Prepare RPC Command
+    const rpcUrl = process.env.RPC_URL || `http://localhost:${process.env.RPC_PORT || 7227}`;
+    const auth = Buffer.from(`${process.env.RPC_USER}:${process.env.RPC_PASSWORD}`).toString('base64');
     
-    // exact syntax match: new WatchOnlyWallet({ address: ... }, network)
-    const broadcaster = new WatchOnlyWallet({ address: dummyAddress }, network);
+    const rpcBody = JSON.stringify({
+      jsonrpc: '1.0', 
+      id: 'broadcast', 
+      method: 'sendrawtransaction', 
+      params: [hex] 
+    });
 
-    // 3. Broadcast
-    const txid = await broadcaster.sendTransaction(hex);
+    console.log(`[Broadcast] Injecting tx via RPC...`);
 
-    console.log('[broadcast ok] txid', txid);
+    // 2. Send directly to Node (Bypassing Rostrum)
+    const rpcRes = await fetch(rpcUrl, { 
+        method:'POST', 
+        headers:{'Content-Type':'application/json', 'Authorization':`Basic ${auth}`}, 
+        body: rpcBody 
+    });
+    
+    const rpcData = await rpcRes.json();
+
+    // 3. Handle Response
+    if (rpcData.error) {
+        console.error('[Broadcast] RPC Error:', rpcData.error);
+        // If RPC fails, maybe fallback to Rostrum? Or just fail.
+        // Let's try fail-fast first.
+        throw new Error(rpcData.error.message || 'Node rejected transaction');
+    }
+
+    const txid = rpcData.result;
+    console.log('[Broadcast] Success! TxId:', txid);
+    
     return res.json({ ok: true, txid });
 
   } catch (e) {
     console.error('broadcast_error', e);
-    // Send the actual error message back to help with debugging
-    return res.status(500).json({ 
-      ok: false, 
-      error: e.message || 'broadcast_failed' 
-    });
+    return res.status(500).json({ ok: false, error: e.message || 'broadcast_failed' });
   }
 });
 
