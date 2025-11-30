@@ -21,23 +21,30 @@ const MAINNET = {
   port: 20004,
 };
 async function connectMainnet(rostrumProvider: any) {
-  // If already connected, skip
+  // 1. Check if already connected
   if ((globalThis as any).__kk_rostrum_mainnet_ok && rostrumProvider.isConnected) return;
 
   for (let i = 0; i < 3; i++) {
     try {
-      // Force disconnect if we are in a bad state
+      // Force disconnect on retry to clear "zombie" states
       if (i > 0) try { await rostrumProvider.disconnect(); } catch {}
       
       console.log(`[Rostrum] Connecting... (Attempt ${i+1})`);
       await rostrumProvider.connect(MAINNET);
       
       (globalThis as any).__kk_rostrum_mainnet_ok = true;
-      return; // Success!
+      return; // Success
     } catch (e) {
-      console.warn(`[Rostrum] Connection failed (Attempt ${i+1}):`, e);
-      if (i === 2) throw e; // Give up on last try
-      await new Promise(r => setTimeout(r, 1000)); // Wait 1s
+      // SAFE LOGGING: Handle 'undefined' errors
+      const msg = e ? (e.message || JSON.stringify(e)) : 'Unknown Network Error';
+      console.warn(`[Rostrum] Connection failed (Attempt ${i+1}):`, msg);
+      
+      if (i === 2) {
+          // THROW A REAL ERROR OBJECT
+          throw new Error(msg === 'Unknown Network Error' ? 'Connection dropped. Please refresh.' : msg);
+      }
+      // Wait before retry (1s, 2s)
+      await new Promise(r => setTimeout(r, 1000 * (i + 1))); 
     }
   }
 }

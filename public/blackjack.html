@@ -1603,14 +1603,21 @@ async function onPayout(){
         loadProfile();
         if (linked?.address) loadWalletBalances(linked.address);
 
-      } catch (e) {
-        if (e.message !== 'Cancelled') {
-           if(window.toast) window.toast(`Bet failed: ${e.message}`, { type: 'error' });
-           else alert(e.message);
-           // Restore button on error
-        btn.style.display = 'inline-flex';
-        btn.textContent = 'Place 100 KIBL Bet';
-        btn.disabled = false;
+     } catch (e) {
+        // 1. Safe Error Extraction
+        const msg = e ? (e.message || String(e)) : 'Unknown error occurred';
+        
+        // 2. Filter out "Cancelled" (User closed modal)
+        if (msg !== 'Cancelled' && !msg.includes('User rejected')) {
+           if(window.toast) window.toast(`Bet failed: ${msg}`, { type: 'error' });
+           else alert(msg);
+        }
+        
+        // 3. Always restore the button
+        if (betBtn) {
+             betBtn.style.display = 'inline-flex';
+             betBtn.textContent = 'Place 100 KIBL Bet';
+             betBtn.disabled = false;
         }
         else {
           betBtn.disabled = false;

@@ -26,9 +26,12 @@ async function connectMainnet(rostrumProvider) {
       globalThis.__kk_rostrum_mainnet_ok = true;
       return;
     } catch (e) {
-      console.warn(`[Rostrum] Connection failed (Attempt ${i + 1}):`, e);
-      if (i === 2) throw e;
-      await new Promise((r) => setTimeout(r, 1e3));
+      const msg = e ? e.message || JSON.stringify(e) : "Unknown Network Error";
+      console.warn(`[Rostrum] Connection failed (Attempt ${i + 1}):`, msg);
+      if (i === 2) {
+        throw new Error(msg === "Unknown Network Error" ? "Connection dropped. Please refresh." : msg);
+      }
+      await new Promise((r) => setTimeout(r, 1e3 * (i + 1)));
     }
   }
 }
