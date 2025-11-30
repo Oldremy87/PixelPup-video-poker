@@ -1488,8 +1488,8 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 </script>
 <script type="module">
-  import { placeBet } from "/assets/walletBet.bundle.js?v=2025030355";
-  import { getSigner } from "/assets/wallet-modal.js?v=Christmasv2";
+  import { placeBet } from "/assets/walletBet.bundle.js?v=20250303";
+  import { getSigner } from "/assets/wallet-modal.js?v=Christmas";
   window.placeBet = placeBet;
 
   // 1. Setup CSRF Helper
@@ -1593,25 +1593,6 @@ const depositBtn = document.getElementById('depositBtn');
       }
     });
 
-    // --- HOOK INTO DRAW TO RESET ---
-    // We need to bring the Bet button back after the hand is over.
-    // Since draw() is global, we can attach a listener to the draw button
-    // to verify when it's done, or simpler: modify the global draw() to reset UI.
-    // For now, let's use a MutationObserver to see when draw disables itself.
-    const obs = new MutationObserver((mutations) => {
-      mutations.forEach((m) => {
-        if (m.attributeName === 'disabled' && drawBtn.disabled === true) {
-          // If draw became disabled, the hand is likely over. Show bet button again.
-          // Small delay to let the win animation play
-          setTimeout(() => {
-             betBtn.style.display = 'inline-flex';
-             betBtn.disabled = false;
-             betBtn.textContent = 'Place 100 KIBL Bet';
-          }, 2000);
-        }
-      });
-    });
-    obs.observe(drawBtn, { attributes: true });
   });
 </script>
 <footer style="opacity:.9;color:var(--text-dim);font-size:12px;text-align:center;padding:14px 0 6px;">
