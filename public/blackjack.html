@@ -1509,27 +1509,11 @@ async function onPayout(){
 
   </script>
  <script type="module">
-  import { placeBet } from '/assets/walletBet.bundle.js?v=Christmas';
-  import { getSigner } from "/assets/wallet-modal.js?v=Christmas";
+  import { placeBet } from "/assets/walletBet.bundle.js?v=20250303v2";
+  import { getSigner } from "/assets/wallet-modal.js?v=Christmasv2";
   window.placeBet = placeBet;
 
-  // 1. BRIDGE: Called by Game Logic when round ends (Win/Loss/BJ)
-  window.onGameSettled = async () => {
-      const btn = document.getElementById('betBtn');
-      // Show button immediately
-      if (btn) {
-          btn.style.display = 'inline-flex';
-          btn.disabled = false;
-          btn.textContent = 'Place 100 KIBL Bet';
-      }
-      // Refresh balance
-      const linked = await fetch('/api/wallet/status').then(r=>r.json()).catch(()=>({}));
-      if (linked?.address && window.loadWalletBalances) {
-          window.loadWalletBalances(linked.address);
-      }
-  };
-
-  // 2. SETUP
+  // 1. Setup CSRF Helper
   async function fetchCsrf() {
     try {
       const r = await fetch('/api/csrf', { credentials: 'include' });
@@ -1538,72 +1522,109 @@ async function onPayout(){
     } catch (e) { console.error("CSRF Init Failed", e); }
   }
 
+  // 2. Setup Wallet Link Helper
   async function ensureLinked() {
     const r = await fetch('/api/wallet/status', { credentials: 'include' });
     const j = await r.json().catch(() => null);
     return j?.ok && j.linked ? j : null;
   }
 
+  // 3. BRIDGE: Called by Game Logic when round ends
+  window.onGameSettled = async () => {
+      const btn = document.getElementById('betBtn');
+      // Force reset button state
+      if (btn) {
+          btn.style.display = 'inline-flex';
+          btn.disabled = false;
+          btn.textContent = 'Place 100 KIBL Bet';
+          btn.classList.remove('busy'); 
+      }
+      // Refresh balance
+      const linked = await fetch('/api/wallet/status').then(r=>r.json()).catch(()=>({}));
+      if (linked?.address && window.loadWalletBalances) {
+          window.loadWalletBalances(linked.address);
+      }
+  };
+
   addEventListener('DOMContentLoaded', async () => {
     await fetchCsrf();
+    
+    // Check wallet connection
     const linked = await ensureLinked();
-    const btn = document.getElementById('betBtn');
-    const oldStart = document.getElementById('bjStart');
+    const betBtn = document.getElementById('betBtn'); // Using consistent name 'betBtn'
+    const drawBtn = document.getElementById('draw');
     const depositBtn = document.getElementById('depositBtn');
     const navConnect = document.getElementById('navConnect');
-    if (linked && navConnect) {
-        navConnect.style.display = 'none';
-    }
-    // Only show if wallet is actually linked
+    const oldStart = document.getElementById('bjStart');
+
+    // Cleanup UI
+    if (oldStart) oldStart.style.display = 'none';
+    if (linked && navConnect) navConnect.style.display = 'none';
+    
+    // Only show deposit if wallet is actually linked
     if (linked?.address && depositBtn) {
-        depositBtn.style.display = 'inline-flex'; // Make visible
-        
+        depositBtn.style.display = 'inline-flex'; 
         depositBtn.onclick = () => {
-            // Copy address to clipboard
             navigator.clipboard.writeText(linked.address)
                 .then(() => alert(`Address Copied!\n\n${linked.address}\n\nSend KIBL (and a little NEXA for gas) to this address to play.`))
-                .catch(() => prompt("Copy your address:", linked.address)); // Fallback
+                .catch(() => prompt("Copy your address:", linked.address)); 
         };
     }
-    if (oldStart) oldStart.style.display = 'none';
-
-    if (btn) {
-      btn.disabled = !linked;
-      btn.textContent = linked ? 'Place 100 KIBL Bet' : 'Connect Wallet to Play';
+    
+    // Setup initial button states
+    if (betBtn) {
+      betBtn.disabled = !linked;
+      betBtn.textContent = linked ? 'Place 100 KIBL Bet' : 'Connect Wallet to Play';
       if (!linked) {
-         btn.onclick = () => window.location.href = '/connect.html';
+         betBtn.onclick = () => window.location.href = '/connect.html';
          return; 
       }
     }
 
-    if (linked?.address && window.loadWalletBalances) {
-      window.loadWalletBalances(linked.address);
+    if (linked?.address) {
+      window.loadWalletBalances?.(linked.address);
     }
 
-    btn?.addEventListener('click', async () => {
-      if (btn.classList.contains('busy')) return;
+    // --- SINGLE CLICK HANDLER FOR BETTING ---
+    betBtn?.addEventListener('click', async () => {
+      if (betBtn.disabled || betBtn.classList.contains('busy')) return;
 
       try {
-        btn.classList.add('busy');
-        btn.textContent = 'Unlocking...';
-        const pass = await getSigner();
+        if (!linked) return alert('Link a wallet on the Connect page first.');
+
+        // Lock UI
+        betBtn.classList.add('busy');
+        betBtn.textContent = 'Unlocking...';
+        // We don't disable it here, we rely on the 'busy' class to prevent double clicks
+        // so we can change text freely.
+
+        const passphrase = await getSigner();
+        if (!passphrase) throw new Error('Cancelled');
+
+        // 1. Send the Crypto
+        betBtn.textContent = 'Signing...';
         
-        btn.textContent = 'Signing...';
         const { txId } = await placeBet({
-          passphrase: pass,
-          kiblAmount: 10000, 
+          passphrase,
+          kiblAmount: 100000, // Blackjack uses 100 KIBL (100,000 minor)
           tokenIdHex: window.KIBL_TOKEN_ID_HEX,
           feeNexa: 600
         });
 
-        if (window.toast) window.toast(`Bet sent!`, { type: 'win' });
+        if (window.toast) toast(`Bet sent!`, { type: 'win' });
+        
+        // 2. Start the Game Logic
+        // CRITICAL: Hide button NOW so "Signing" doesn't get stuck visible
+        betBtn.style.display = 'none'; 
+        betBtn.textContent = 'Dealing...'; // Reset text for next time
         
         await window.startRound(); 
-         // Refresh wallet balances
+        
+        // Refresh wallet balances
         loadProfile();
         if (linked?.address) loadWalletBalances(linked.address);
 
-     } catch (e) {
+      } catch (e) {
         // 1. Safe Error Extraction
         const msg = e ? (e.message || String(e)) : 'Unknown error occurred';
         
@@ -1613,20 +1634,17 @@ async function onPayout(){
            else alert(msg);
         }
         
-        // 3. Always restore the button
+        // 3. ALWAYS restore the button on error
         if (betBtn) {
              betBtn.style.display = 'inline-flex';
              betBtn.textContent = 'Place 100 KIBL Bet';
              betBtn.disabled = false;
+             betBtn.classList.remove('busy');
         }
-        else {
-          betBtn.disabled = false;
-          betBtn.textContent = 'Place 100 KIBL Bet';
-        }
- 
-      } finally {
-        btn.classList.remove('busy');
-      }
+
+      } 
+      // Note: We DO NOT remove 'busy' in finally{} for success cases,
+      // because the button is hidden and onGameSettled() handles the full reset.
     });
   });
 </script>
