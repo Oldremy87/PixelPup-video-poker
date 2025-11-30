@@ -1387,26 +1387,33 @@ async function split(){
 
     // ——— Daily & Payout (copied minimal from poker page) ———
     async function onDaily(){
-  try{
-    const data = await postWithCsrf(API.daily, {});
+ try {
+    const res = await postWithCsrf(API.daily, { method: 'POST', credentials: 'include' });
+    const data = await res.json();
+
     if (!data.ok){
-      // Check if it's actually the rate limit error
       if (data.error === 'Daily reward already claimed.') {
           const mins = data.retryInMs ? Math.ceil(data.retryInMs/60000) : 'later';
           alert('Daily already claimed. Try again in ~' + mins + ' minutes.');
       } else {
-          // Show the REAL error (e.g. "Link wallet..." or "RPC Error")
           alert('Daily Reward Failed: ' + (data.error || 'Unknown error'));
       }
       return;
     }
-    const creditUnits  = Math.floor((data.credit||0)/100);
-    const balanceUnits = Math.floor((data.sessionBalance||0)/100);
-    alert(`Daily reward claimed: +${creditUnits} KIBL`);
-    payoutEl.textContent = `Total Payout: ${balanceUnits} KIBL`;
-    totalPayout = balanceUnits;
-  } catch(e){
-    alert(`Daily failed: ${e.message || e}`);
+
+    // SUCCESS: It was sent directly to the wallet
+    const creditUnits = Math.floor((data.credit || 0) / 100);
+    alert(`Daily Reward Sent! \n\n+${creditUnits} KIBL have been sent directly to your linked wallet.\nTxID: ${data.txId?.slice(0,10)}...`);
+
+    // Refresh the WALLET balance, not the payout total
+    const linked = await fetch('/api/wallet/status').then(r=>r.json()).catch(()=>({}));
+    if (linked?.address && window.loadWalletBalances) {
+        window.loadWalletBalances(linked.address);
+    }
+
+  } catch (e) {
+    console.error(e);
+    alert('Failed to claim daily reward, please try again.');
   }
 }
 

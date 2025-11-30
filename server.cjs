@@ -26,9 +26,26 @@ const PORT = process.env.PORT || 10000;
 
 // Hard-lock to MAINNET Rostrum (no testnet, no localhost)
 async function ensureRostrum() {
-  await rostrumProvider.connect({ scheme: 'wss', host: 'electrum.nexa.org', port: 20004 });
+  for (let i = 0; i < 3; i++) {
+    try {
+      // Check if already connected (optimization)
+      if (rostrumProvider.isConnected) return;
+
+      await rostrumProvider.connect({ 
+        scheme: 'wss', 
+        host: 'electrum.nexa.org', 
+        port: 20004 
+      });
+      return; // Success
+    } catch (e) {
+      console.warn(`[Rostrum] Connection attempt ${i+1} failed:`, e.message);
+      if (i === 2) throw e; // Give up on last try
+      await new Promise(r => setTimeout(r, 500)); // Brief pause
+    }
+  }
 }
-ensureRostrum().catch(()=>{});
+// Initialize on boot
+ensureRostrum().catch(e => console.error('[Boot] Rostrum failed:', e.message));
 // KIBL token group HEX (64 hex chars – trim any trailing padding you may have)
 const KIBL_GROUP_HEX = '656bfefce8a0885acba5c809c5afcfbfa62589417d84d54108e6bb42a6f30000';
 
