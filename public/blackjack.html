@@ -1597,7 +1597,7 @@ async function onPayout(){
         });
 
         if (window.toast) window.toast(`Bet sent!`, { type: 'win' });
-        betBtn.textContent = 'Dealing...';
+        
         await window.startRound(); 
          // Refresh wallet balances
         loadProfile();
