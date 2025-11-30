@@ -1582,7 +1582,7 @@ async function onPayout(){
         betBtn.textContent = 'Signing...';
         const { txId } = await placeBet({
           passphrase,
-          kiblAmount: 100000, // 100 KIBL
+          kiblAmount: 10000, // 100 KIBL
           tokenIdHex: window.KIBL_TOKEN_ID_HEX,
           feeNexa: 600
         });
