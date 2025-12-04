@@ -259,7 +259,7 @@ app.use((req, _res, next) => {
 
 const HANDS_WINDOW_MS  = SIX_HOURS_MS;
 const TOKENS_PER_CREDIT = Number(process.env.TOKENS_PER_CREDIT || 1); // tokens per 1 credit
-const HANDS_LIMIT = Math.max(1, Number(process.env.IP_HANDS_PER_6H)) || 40;
+const HANDS_LIMIT = Math.max(1, Number(process.env.IP_HANDS_PER_6H)) || 1000;
 const HANDS_LIMIT_POKER = Number(process.env.IP_HANDS_PER_6H_POKER || HANDS_LIMIT);
 const HANDS_LIMIT_BJ    = Number(process.env.IP_HANDS_PER_6H_BJ    || HANDS_LIMIT);
 const WINDOW_MS   = 6 * 60 * 60 * 1000;
@@ -1264,7 +1264,7 @@ const payoutLimiter = rateLimit({
   legacyHeaders: false
 });
 app.use('/api/payout', payoutLimiter);
-app.post('/api/payout', payoutLimiter, async (req, res) => {
+app.post('/api/payout', async (req, res) => {
   try {
     ensureBank(req);
     // 1. Connection Check
