@@ -4,7 +4,6 @@
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
   <title>Connect Wallet – PixelPup</title>
-  
   <script>
   (async () => {
     try {
@@ -14,9 +13,7 @@
     } catch {}
   })();
   </script>
-
   <style>
-    /* ===== THEME ===== */
     :root{
       --bg:#0b0f19; --panel:#111827; --text:#00ffc6; --text-dim:#7fffe6;
       --accent:#ffcc00; --accent-2:#ff3df7; --accent-3:#6ae3ff;
@@ -31,29 +28,22 @@
       color:var(--text); padding:24px;
     }
     a{color:var(--accent-3); text-decoration:none}
-    
-    /* HEADER */
     header{display:flex; align-items:center; justify-content:space-between; gap:16px; margin:0 auto 16px; max-width:1100px}
     nav{display:flex; gap:10px; flex-wrap:wrap}
     .brand{display:flex; align-items:center; gap:10px; letter-spacing:.5px; text-shadow:0 0 10px rgba(0,255,198,.6)}
     .brand-badge{width:36px;height:36px;border-radius:10px;border:2px solid var(--card-border);
       box-shadow:0 0 14px rgba(0,255,198,.2); display:grid; place-items:center;
       background:linear-gradient(180deg,rgba(255,255,255,.06),rgba(255,255,255,.02)); font-weight:700; color:var(--accent)}
-    
-    /* BUTTONS */
     .btn{appearance:none; border:0; cursor:pointer; padding:10px 14px; border-radius:12px; color:#000; background:var(--accent);
       box-shadow:0 3px 0 #b59000, 0 0 12px rgba(255,204,0,.35); font-weight:700; letter-spacing:.2px;
       display:inline-flex; align-items:center; gap:8px; font-size:12px}
     .btn-primary{background:var(--accent-2); color:#120016; box-shadow:0 3px 0 #a2259c, 0 0 14px rgba(255,61,247,.35)}
     .btn-ghost{background:linear-gradient(180deg,rgba(255,255,255,.06),rgba(255,255,255,.02)); color:var(--text);
       border:1px solid rgba(58,245,217,.35); box-shadow:0 0 12px rgba(0,255,198,.18) inset,0 0 12px rgba(0,255,198,.12)}
-    
-    /* LAYOUT */
     .wrap{max-width:600px; margin:0 auto}
     .panel{background:linear-gradient(180deg,rgba(255,255,255,.04),rgba(255,255,255,.01));
       border:1px solid rgba(58,245,217,.3); border-radius:16px; padding:24px; backdrop-filter:blur(4px);
       box-shadow:0 0 24px rgba(0,255,198,.06) inset, 0 0 24px rgba(0,255,198,.08)}
-    
     .controls{ display:grid; gap:16px; margin-bottom:20px; }
     label{ display:block; margin-bottom:6px; color:var(--text-dim); font-size:14px; }
     input, select, textarea {
@@ -64,25 +54,6 @@
     .readout { color:var(--text-dim); font-size:14px; line-height:1.5; margin-bottom:20px; }
     small { display:block; margin-top:4px; color:var(--danger); }
     [hidden] { display: none !important; }
-
-    /* INFO MODAL STYLES */
-    .info-modal {
-      position: fixed; inset: 0; z-index: 9999;
-      background: rgba(5, 7, 13, 0.9); backdrop-filter: blur(5px);
-      display: flex; align-items: center; justify-content: center; padding: 20px;
-    }
-    .info-card {
-      background: var(--panel); border: 1px solid var(--card-border);
-      border-radius: 16px; padding: 24px; max-width: 500px; width: 100%;
-      box-shadow: 0 0 40px rgba(58,245,217,0.15);
-      animation: fadeIn 0.3s ease-out;
-    }
-    .info-card h2 { margin-top: 0; color: var(--accent); }
-    .info-card ul { padding-left: 20px; color: var(--text-dim); line-height: 1.6; margin: 10px 0; text-align: left; }
-    .info-card li { margin-bottom: 10px; }
-    .info-card strong { color: var(--text); }
-    @keyframes fadeIn { from { opacity:0; transform:translateY(10px); } to { opacity:1; transform:none; } }
-
   </style>
 </head>
 <body>
@@ -91,7 +62,6 @@
     <nav>
       <a class="btn btn-ghost" href="/play.html">Poker</a>
       <a class="btn btn-ghost" href="/blackjack.html">Blackjack</a>
-      <button id="showInfoBtn" class="btn btn-ghost" aria-label="Help">?</button>
     </nav>
   </header>
 
@@ -138,44 +108,6 @@
     </div>
   </main>
 
-  <div id="infoModal" class="info-modal" hidden>
-    <div class="info-card">
-      <h2>How It Works</h2>
-      <ul>
-        <li><strong>Local Key:</strong> When you click Create, a standard 12-word Nexa seed is generated <em>locally in your browser</em>.</li>
-        <li><strong>Encryption:</strong> Your password encrypts that seed into your browser's storage. The server <strong>never</strong> sees your keys.</li>
-        <li><strong>Session Usage:</strong> You unlock it once per session (15 mins) to sign bets instantly without popups.</li>
-        <li><strong>Importing:</strong> You can import a seed from Otoplo or Wally, or just send funds to the new address we generate for you.</li>
-      </ul>
-      <button id="closeInfo" class="btn btn-primary" style="width:100%">Got it</button>
-    </div>
-  </div>
-
   <script type="module" src="/assets/connect.bundle.js"></script>
-  
-  <script>
-    // Info Modal Logic (Runs after DOM load)
-    document.addEventListener('DOMContentLoaded', () => {
-      const modal = document.getElementById('infoModal');
-      const closeBtn = document.getElementById('closeInfo');
-      const showBtn = document.getElementById('showInfoBtn');
-      const KEY = 'kk_connect_explained_v1';
-
-      // Show on first visit
-      if (!localStorage.getItem(KEY)) {
-        modal.hidden = false;
-      }
-
-      closeBtn.addEventListener('click', () => {
-        modal.hidden = true;
-        localStorage.setItem(KEY, '3');
-      });
-
-      // Allow re-opening manually
-      showBtn.addEventListener('click', () => {
-        modal.hidden = false;
-      });
-    });
-  </script>
 </body>
 </html>

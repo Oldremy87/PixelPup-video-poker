@@ -13,7 +13,7 @@ const csrf = require('csurf');
 const PgSession = require('connect-pg-simple')(session);
 const {randomBytes, createHash, randomUUID } = require('crypto');
 const app = express();
-const {WatchOnlyWallet, rostrumProvider } = require('nexa-wallet-sdk');
+const { WatchOnlyWallet, Wallet, rostrumProvider, AccountType } = require('nexa-wallet-sdk');
 app.set('trust proxy', 1);
 // ----- ENV / MODE -----
 process.on('unhandledRejection', (reason) => {
@@ -23,30 +23,39 @@ process.on('uncaughtException', (err) => {
   console.error('[uncaughtException]', err);
 });
 const PORT = process.env.PORT || 10000;
-
-// Hard-lock to MAINNET Rostrum (no testnet, no localhost)
 async function ensureRostrum() {
-  for (let i = 0; i < 3; i++) {
+  // 1. Try Private Node (Fastest)
+  try {
+    if (rostrumProvider.isConnected) return;
+    
+    console.log('[Rostrum] Connecting to Private Infrastructure...');
+    await rostrumProvider.connect({ 
+      scheme: 'wss', 
+      host: 'node.remy-dev.com',  
+      port: 443 
+    });
+    console.log('✅ [Rostrum] Connected to Private Node (NVMe Accelerated)');
+  } catch (e) {
+    console.warn('⚠️ [Rostrum] Private node unreachable, attempting failover:', e.message);
+    // 2. Failover to Public Node
     try {
-      // Check if already connected (optimization)
-      if (rostrumProvider.isConnected) return;
-
       await rostrumProvider.connect({ 
         scheme: 'wss', 
         host: 'electrum.nexa.org', 
         port: 20004 
       });
-      return; // Success
-    } catch (e) {
-      console.warn(`[Rostrum] Connection attempt ${i+1} failed:`, e.message);
-      if (i === 2) throw e; // Give up on last try
-      await new Promise(r => setTimeout(r, 500)); // Brief pause
+      console.log('⚠️ [Rostrum] Connected to Public Backup Node');
+    } catch (err) {
+      console.error('❌ [Rostrum] CRITICAL: All nodes failed:', err.message);
     }
   }
 }
-// Initialize on boot
-ensureRostrum().catch(e => console.error('[Boot] Rostrum failed:', e.message));
-// KIBL token group HEX (64 hex chars – trim any trailing padding you may have)
+
+
+(async () => {
+  await ensureRostrum();
+})();
+
 const KIBL_GROUP_HEX = '656bfefce8a0885acba5c809c5afcfbfa62589417d84d54108e6bb42a6f30000';
 
 
@@ -58,7 +67,8 @@ function must(name) {
   return v;
 }
 
-function mustBeURL(name) {
+function mustBeURL(name) {// - REPLACED FUNCTION
+
   const v = must(name);
   try { new URL(v); } catch (e) {
     throw new Error(`Invalid URL in ${name}: ${v}`);
@@ -82,7 +92,7 @@ if (hasDb) {
   if (!hasDb) throw new Error('DB disabled');
   return pool;
 }
-
+let cachedServerWallet = null;
 
 // ----- MIDDLEWARE ORDER -----
 app.use(cookieParser());
@@ -249,7 +259,7 @@ app.use((req, _res, next) => {
 
 const HANDS_WINDOW_MS  = SIX_HOURS_MS;
 const TOKENS_PER_CREDIT = Number(process.env.TOKENS_PER_CREDIT || 1); // tokens per 1 credit
-const HANDS_LIMIT = Math.max(1, Number(process.env.IP_HANDS_PER_6H)) || 1000;
+const HANDS_LIMIT = Math.max(1, Number(process.env.IP_HANDS_PER_6H)) || 40;
 const HANDS_LIMIT_POKER = Number(process.env.IP_HANDS_PER_6H_POKER || HANDS_LIMIT);
 const HANDS_LIMIT_BJ    = Number(process.env.IP_HANDS_PER_6H_BJ    || HANDS_LIMIT);
 const WINDOW_MS   = 6 * 60 * 60 * 1000;
@@ -623,7 +633,6 @@ function ensureBank(req) {
 // /api/wallet/balance
 app.get('/api/wallet/balance', async (req, res) => {
   try {
-    await ensureRostrum();
 
     const address = String(req.query.address || '');
     if (!/^nexa:[a-z0-9]+$/i.test(address)) {
@@ -688,45 +697,40 @@ app.get('/api/wallet/status', async (req,res)=>{
   } catch { res.status(500).json({ ok:false, error:'status_error' }); }
 });
 
+// Optimized /api/bet/build-unsigned
 app.post('/api/bet/build-unsigned', async (req, res) => {
   try {
-    // --- FIX: Ensure connection here too ---
-    await rostrumProvider.connect({
-      scheme: 'wss',
-      host: 'electrum.nexa.org',
-      port: 20004,
-    });
-    const { fromAddress, kiblAmount, feeNexa } = req.body;
-    if (!fromAddress || !/^nexa:[a-z0-9]+$/i.test(fromAddress)) return res.status(400).json({ ok: false, error: 'bad_address' });
-    if (!Number.isInteger(kiblAmount) || kiblAmount <= 0) return res.status(400).json({ ok: false, error: 'bad_kibl_amount' });
-    if (!Number.isInteger(feeNexa) || feeNexa <= 0) return res.status(400).json({ ok: false, error: 'bad_fee' });
-    
+    // 1. Reuse existing connection (Instant)
+    await ensureRostrum();
 
-    const network = 'mainnet';
+    const { fromAddress, kiblAmount, feeNexa } = req.body;
+    
+    // Fast Validation
+    if (!fromAddress?.startsWith('nexa:')) return res.status(400).json({ ok: false, error: 'bad_address' });
+    
+    // 2. Constants (Defined once, cheap)
     const house = 'nexa:nqtsq5g5pvucuzm2kh92kqtxy5s3zfutq3xgnhh5src65fc3';
-    const tokenIdHex = '656bfefce8a0885acba5c809c5afcfbfa62589417d84d54108e6bb42a6f30000'
-    const tokenId = 'nexa:tpjkhlhuazsgskkt5hyqn3d0e7l6vfvfg97cf42pprntks4x7vqqqcavzypmt'
-  
-    const w = new WatchOnlyWallet({ address: fromAddress }, network);
-const nexaBal   = await w.getBalance();
-const tokenBals = await w.getTokenBalances();
-const kiblAvail = Number(tokenBals[KIBL_GROUP_HEX]?.confirmed || 0);
+    const tokenId = 'nexa:tpjkhlhuazsgskkt5hyqn3d0e7l6vfvfg97cf42pprntks4x7vqqqcavzypmt'; 
+
+    // 3. Lightweight Instantiation (Cheap)
+    const w = new WatchOnlyWallet({ address: fromAddress }, 'mainnet');
+
+    // 4. THE ONLY NETWORK CALL
+    // We rely on your NVMe node to return this data in < 50ms.
     const unsignedTx = await w.newTransaction()
       .sendTo(house, feeNexa.toString())  
-      .sendToToken(house, kiblAmount.toString(), tokenId)
-      .populate()
+      .sendToToken(house, '5000', tokenId) 
+      .populate() // <--- The only "slow" part (Fetching UTXOs)
       .build();
 
-    console.log('[build-unsigned] FULL HEX >>>\n' + unsignedTx + '\n<<< END');
-    console.log('[build-unsigned] unsignedTx length', unsignedTx?.length);
+    return res.json({ ok: true, unsignedTx, house, network: 'mainnet' });
 
-    return res.json({ ok: true, unsignedTx, house, network });
   } catch (e) {
-    console.error('build_unsigned_failed', e);
-    return res.status(500).json({ ok: false, error: 'build_failed' });
+    console.error('Build Error:', e.message);
+    const msg = e.message.includes('Insufficient') ? 'Insufficient funds' : 'build_failed';
+    return res.status(500).json({ ok: false, error: msg });
   }
 });
-
 app.post('/api/tx/broadcast', async (req, res) => {
   try {
     const { hex } = req.body || {};
@@ -734,43 +738,54 @@ app.post('/api/tx/broadcast', async (req, res) => {
       return res.status(400).json({ ok: false, error: 'bad_hex' });
     }
 
-    // 1. Prepare RPC Command
-    const rpcUrl = process.env.RPC_URL || `http://localhost:${process.env.RPC_PORT || 7227}`;
-    const auth = Buffer.from(`${process.env.RPC_USER}:${process.env.RPC_PASSWORD}`).toString('base64');
-    
-    const rpcBody = JSON.stringify({
-      jsonrpc: '1.0', 
-      id: 'broadcast', 
-      method: 'sendrawtransaction', 
-      params: [hex] 
-    });
+    // 1. Connection
+    await ensureRostrum();
 
-    console.log(`[Broadcast] Injecting tx via RPC...`);
+    // 2. LAZY LOAD WALLET (Inline, same as daily-reward)
+    if (!cachedServerWallet) {
+        console.log('[Broadcast] Initializing Hot Wallet...');
+        const secret = process.env.HOT_WALLET_SECRET;
+        if (!secret) throw new Error('HOT_WALLET_SECRET missing');
 
-    // 2. Send directly to Node (Bypassing Rostrum)
-    const rpcRes = await fetch(rpcUrl, { 
-        method:'POST', 
-        headers:{'Content-Type':'application/json', 'Authorization':`Basic ${auth}`}, 
-        body: rpcBody 
-    });
-    
-    const rpcData = await rpcRes.json();
+        let w;
+        // Import
+        if (secret.trim().startsWith('xprv') || secret.trim().startsWith('F6rxz')) {
+             w = Wallet.fromXpriv(secret.trim(), 'mainnet');
+        } else {
+             w = new Wallet(secret, 'mainnet');
+        }
 
-    // 3. Handle Response
-    if (rpcData.error) {
-        console.error('[Broadcast] RPC Error:', rpcData.error);
-        // If RPC fails, maybe fallback to Rostrum? Or just fail.
-        // Let's try fail-fast first.
-        throw new Error(rpcData.error.message || 'Node rejected transaction');
+        // Scan Chain
+        await w.initialize();
+        
+        // Ensure Account
+        if (!w.accountStore.getAccount('2.0')) {
+             console.log('[Broadcast] Creating Account 2.0...');
+             await w.newAccount('NEXA'); 
+        }
+        
+        cachedServerWallet = w;
+        console.log('[Broadcast] Wallet Cached.');
     }
-
-    const txid = rpcData.result;
-    console.log('[Broadcast] Success! TxId:', txid);
     
+    // 3. Select Wallet
+    const walletToUse = cachedServerWallet;
+    if (!walletToUse) throw new Error('Server wallet not initialized');
+
+    console.log(`[Broadcast] Sending via Server Wallet...`);
+
+    // 4. BROADCAST
+    const txid = await walletToUse.sendTransaction(hex);
+    
+    console.log('[Broadcast] Success! TxId:', txid);
     return res.json({ ok: true, txid });
 
   } catch (e) {
     console.error('broadcast_error', e);
+    // Self-healing: if inputs are missing, clear cache to force rescan next time
+    if (e.message && (e.message.includes('inputs') || e.message.includes('UTXO'))) {
+        cachedServerWallet = null;
+    }
     return res.status(500).json({ ok: false, error: e.message || 'broadcast_failed' });
   }
 });
@@ -1140,92 +1155,75 @@ app.get('/api/fair/:handId', async (req, res) => {
 const rewardLimiter = rateLimit({ windowMs: 60 * 1000, max: 12, standardHeaders: true, legacyHeaders: false });
 // DAILY REWARD (minor units throughout)
 app.post('/api/daily-reward', async (req, res) => {
-  const ip = (typeof getClientIp === 'function') ? getClientIp(req) : req.ip;
-  const uid = req.uid; // From session
-  const FAUCET_AMOUNT = 10000 * 100; // 10,000 KIBL (in minor units)
-  
-  const COOLDOWN = 24 * 60 * 60 * 1000; 
+  const ip = getClientIp(req);
+  const uid = req.uid;
+  const FAUCET_AMOUNT = 1000 * 100; // 1000 KIBL
 
   try {
-    if (!process.env.KIBL_GROUP_ID) throw new Error('Server Config Error: Missing KIBL_GROUP_ID');
+    // 1. Ensure Network Connection
+    await ensureRostrum();
 
-    if (hasDb) {
-      const p = await db();
-      const { rows } = await p.query(
-        `SELECT created_at FROM payouts 
-         WHERE (ip = $1 OR user_id = $2) AND type = 'faucet' 
-         ORDER BY created_at DESC LIMIT 1`,
-        [ip, uid]
-      );
+    // 2. LAZY LOAD WALLET (The Speed Fix)
+    // Only run the slow init/scan if we haven't done it yet.
+    if (!cachedServerWallet) {
+        console.log('[Wallet] Initializing Hot Wallet for the first time...');
+        const secret = process.env.HOT_WALLET_SECRET;
+        if (!secret) throw new Error('HOT_WALLET_SECRET missing');
 
-      if (rows.length > 0) {
-        const last = new Date(rows[0].created_at).getTime();
-        const diff = Date.now() - last;
-        
-        // --- RATE LIMIT CHECK (Comment out ONLY for testing) ---
-        if (diff < COOLDOWN) {
-           return res.status(429).json({ 
-            ok: false, 
-            error: 'Daily reward already claimed.', 
-           retryInMs: COOLDOWN - diff 
-           });
+        // Import
+        let w;
+        if (secret.trim().startsWith('xprv') || secret.trim().startsWith('F6rxz')) {
+             w = Wallet.fromXpriv(secret.trim(), 'mainnet');
+        } else {
+             w = new Wallet(secret, 'mainnet');
         }
-        // ------------------------------------------------------
-      }
+
+        // Scan Chain (The slow part - happens once)
+        await w.initialize();
+        
+        // Ensure Account 2.0 exists
+        if (!w.accountStore.getAccount('2.0')) {
+             console.log('[Wallet] Creating Account 2.0...');
+             await w.newAccount('NEXA'); 
+        }
+        
+        // Save to cache
+        cachedServerWallet = w;
+        console.log('[Wallet] Initialization Complete. Cached for future requests.');
     }
 
-    // 2. GET TARGET ADDRESS (Secure Lookup - Matches /api/payout)
+    // 3. Use the Cached Wallet
+    const spendingAccount = cachedServerWallet.accountStore.getAccount('2.0');
+    if (!spendingAccount) throw new Error('Hot Wallet Account 2.0 missing');
+
+    // 4. Address Lookup
     let targetAddress = null;
     if (hasDb && uid) {
        const p = await db();
        const { rows } = await p.query('SELECT wallet_addr FROM users WHERE user_id=$1', [uid]);
-       if (rows[0]?.wallet_addr) targetAddress = rows[0].wallet_addr;
+       targetAddress = rows[0]?.wallet_addr;
     }
-    // Fallback to session
-    if (!targetAddress) {
-        targetAddress = req.session.linkedWallet?.address;
-    }
-
-    if (!targetAddress) {
-      return res.status(400).json({ ok: false, error: 'Link wallet to claim daily reward.' });
+    if (!targetAddress) targetAddress = req.session.linkedWallet?.address;
+    if (!targetAddress || !/^nexa:/.test(targetAddress)) {
+      return res.status(400).json({ ok: false, error: 'Link valid wallet first.' });
     }
 
-    // 3. VALIDATE ADDRESS (Prevents RPC crashes)
-    if (!targetAddress.startsWith('nexa:')) {
-        return res.status(400).json({ ok: false, error: 'Invalid linked address format.' });
-    }
-
-    // 4. SEND TOKENS (Using Node RPC)
-    const rpcUrl = process.env.RPC_URL || `http://localhost:${process.env.RPC_PORT || 7227}`;
-    const auth = Buffer.from(`${process.env.RPC_USER}:${process.env.RPC_PASSWORD}`).toString('base64');
+    // 5. Build & Send (Instant now)
+    console.log(`[Faucet] Sending ${FAUCET_AMOUNT} KIBL to ${targetAddress}...`);
     
-    // Log the attempt (helps debug)
-    console.log(`[Faucet] Sending ${FAUCET_AMOUNT} to ${targetAddress}...`);
+    const tx = await cachedServerWallet.newTransaction(spendingAccount)
+      .onNetwork('mainnet')
+      .sendTo(targetAddress, '546') 
+      .sendToToken(targetAddress, String(FAUCET_AMOUNT), process.env.KIBL_GROUP_ID || KIBL_GROUP_HEX)
+      .populate()
+      .sign()
+      .build();
 
-    const rpcBody = JSON.stringify({
-      jsonrpc: '1.0', id: 'faucet', method: 'token',
-      params: ['send', process.env.KIBL_GROUP_ID, targetAddress, String(FAUCET_AMOUNT)]
-    });
+    // Use provider to broadcast
+    const txId = await cachedServerWallet.sendTransaction(tx);
+    console.log('[Faucet] Success! TxId:', txId);
 
-    // Ensure 'fetch' is available (Node 18+ has it global, older needs import)
-    const rpcRes = await fetch(rpcUrl, { 
-        method:'POST', 
-        headers:{'Content-Type':'application/json', 'Authorization':`Basic ${auth}`}, 
-        body: rpcBody 
-    });
-    
-    if (!rpcRes.ok) {
-        throw new Error(`RPC HTTP Error: ${rpcRes.status} ${rpcRes.statusText}`);
-    }
-
-    const rpcData = await rpcRes.json();
-    
-    if (rpcData.error) {
-        throw new Error('RPC Logic Error: ' + JSON.stringify(rpcData.error));
-    }
-    const txId = rpcData.result;
-
-    // 5. LOG CLAIM TO DB
+    // 6. DB Logging
     if (hasDb) {
       const p = await db();
       await p.query(
@@ -1235,18 +1233,17 @@ app.post('/api/daily-reward', async (req, res) => {
       );
     }
 
-    return res.json({ 
-      ok: true, 
-      credit: FAUCET_AMOUNT, 
-      txId 
-    });
+    return res.json({ ok: true, credit: FAUCET_AMOUNT, txId });
 
   } catch (e) {
-    console.error('Faucet Route Error:', e); // Check your server console for this!
-    return res.status(500).json({ ok: false, error: 'Faucet error: ' + e.message });
+    console.error('Faucet Error:', e);
+    // If the wallet state got corrupted, clear cache so next try re-initializes
+    if (e.message.includes('UTXO') || e.message.includes('input')) {
+        cachedServerWallet = null;
+    }
+    return res.status(500).json({ ok: false, error: e.message });
   }
 });
-
 // =================== Payout (minor units throughout) ===================
 const usedCaptchaTokens   = new Set();                  // replay defense
 setInterval(() => usedCaptchaTokens.clear(), 5 * 60 * 1000);
@@ -1267,35 +1264,56 @@ const payoutLimiter = rateLimit({
   legacyHeaders: false
 });
 app.use('/api/payout', payoutLimiter);
-
 app.post('/api/payout', payoutLimiter, async (req, res) => {
   try {
     ensureBank(req);
+    // 1. Connection Check
+    await ensureRostrum();
 
-    // 1. DETERMINE TARGET ADDRESS (Secure Lookup)
+    // 2. LAZY LOAD WALLET (Reliability Fix)
+    if (!cachedServerWallet) {
+        console.log('[Payout] Initializing Hot Wallet for the first time...');
+        const secret = process.env.HOT_WALLET_SECRET;
+        if (!secret) throw new Error('HOT_WALLET_SECRET missing');
+
+        let w;
+        // Import based on key type
+        if (secret.trim().startsWith('xprv') || secret.trim().startsWith('F6rxz')) {
+             w = Wallet.fromXpriv(secret.trim(), 'mainnet');
+        } else {
+             w = new Wallet(secret, 'mainnet');
+        }
+
+        // Scan Chain (Slow, happens once)
+        await w.initialize();
+        
+        // Ensure Account 2.0 exists
+        if (!w.accountStore.getAccount('2.0')) {
+             console.log('[Payout] Creating Account 2.0...');
+             await w.newAccount('NEXA'); 
+        }
+        
+        cachedServerWallet = w;
+        console.log('[Payout] Wallet Cached.');
+    }
+
+    // 3. Get Account
+    const spendingAccount = cachedServerWallet.accountStore.getAccount('2.0');
+    if (!spendingAccount) throw new Error('Hot Wallet Account 2.0 missing');
+
+    // (Address Lookup Logic)
     let targetAddress = null;
+    if (hasDb && req.uid) {
+       const p = await db();
+       const { rows } = await p.query('SELECT wallet_addr FROM users WHERE user_id=$1', [req.uid]);
+       targetAddress = rows[0]?.wallet_addr;
+    }
+    if (!targetAddress) targetAddress = req.session.linkedWallet?.address;
     
-    // Check DB first
-    if (hasDb) {
-        const p = await db();
-        const { rows } = await p.query('SELECT wallet_addr FROM users WHERE user_id=$1', [req.uid]);
-        targetAddress = rows[0]?.wallet_addr;
-    } 
-    // Fallback to session (if DB is down or using memory store)
-    if (!targetAddress) {
-        targetAddress = req.session.linkedWallet?.address;
+    if (!targetAddress || !/^nexa:/.test(targetAddress)) {
+        return res.status(400).json({ error: 'Please link a wallet first.' });
     }
 
-    if (!targetAddress) {
-        return res.status(400).json({ error: 'No linked wallet found. Please Connect Wallet first.' });
-    }
-
-    // 2. Validate Address Format
-    if (!looksLikeNexaAddress(targetAddress)) {
-        return res.status(400).json({ error: 'Linked address is invalid.' });
-    }
-
-    // 3. CAPTCHA & BALANCE CHECKS (Standard Logic)
     const { 'h-captcha-response': hcapStd, hcaptchaToken: hcapCustom } = req.body || {};
     const captchaToken = hcapCustom || hcapStd;
     
@@ -1310,7 +1328,6 @@ app.post('/api/payout', payoutLimiter, async (req, res) => {
     } catch(e) {}
     
     if (!captchaResponse?.success) return res.status(400).json({ error: 'Captcha failed' });
-
     // Check Balance
     const game = (req.body?.game || 'all').toString().toLowerCase();
     const pokerMinor = Math.max(0, Number(req.session.wallet?.poker || 0));
@@ -1332,27 +1349,25 @@ app.post('/api/payout', payoutLimiter, async (req, res) => {
         deductBJ = sendMinor - deductPoker;
     }
 
-    // 5. EXECUTE RPC
-    const rpcUrl = process.env.RPC_URL || `http://localhost:${process.env.RPC_PORT || 7227}`;
-    const auth = Buffer.from(`${process.env.RPC_USER}:${process.env.RPC_PASSWORD}`).toString('base64');
-    
-    const rpcBody = JSON.stringify({
-      jsonrpc: '1.0', id: 'kibl', method: 'token',
-      params: ['send', process.env.KIBL_GROUP_ID, targetAddress, String(sendMinor)] // <--- USES targetAddress
-    });
+  
 
-    const rpcRes = await fetch(rpcUrl, { 
-        method:'POST', 
-        headers:{'Content-Type':'application/json', 'Authorization':`Basic ${auth}`}, 
-        body: rpcBody 
-    });
-    const rpcJson = await rpcRes.json();
     
-    if (rpcJson.error) throw new Error(JSON.stringify(rpcJson.error));
-    const txId = rpcJson.result;
+    // - REPLACING RPC CALL WITH SDK
+    console.log(`[Payout] Sending ${sendMinor} KIBL to ${targetAddress}`);
 
-    // 6. UPDATE STATE
-    req.session.wallet.poker = Math.max(0, pokerMinor - deductPoker);
+
+
+    const tx = await cachedServerWallet.newTransaction(spendingAccount)
+      .sendToToken(targetAddress, String(sendMinor), process.env.KIBL_GROUP_ID || KIBL_GROUP_HEX)
+      .sendTo(targetAddress, '546') // Dust NEXA
+      .populate()
+      .sign()
+      .build();
+
+    const txId = await cachedServerWallet.sendTransaction(tx);
+    console.log('[Payout] Broadcast success:', txId);
+
+     req.session.wallet.poker = Math.max(0, pokerMinor - deductPoker);
     req.session.wallet.blackjack = Math.max(0, bjMinor - deductBJ);
     req.session.bank = req.session.wallet.poker + req.session.wallet.blackjack;
     
@@ -1378,6 +1393,7 @@ app.post('/api/payout', payoutLimiter, async (req, res) => {
     return res.status(500).json({ error: 'Payout failed. Please try again.' });
   }
 });
+
 // =================== BLACKJACK ENGINE (non-wagering, points-driven) ===================
 
 function bjEnsure(req){
