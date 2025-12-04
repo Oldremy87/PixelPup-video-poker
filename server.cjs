@@ -329,7 +329,13 @@ app.get('/api/profile', async (req, res) => {
     return res.status(500).json({ ok: false, error: 'profile_error' });
   }
 });
-
+function touch(rec, now) {
+  // If no record exists OR the record is expired (older than 6 hours) -> Reset
+  if (!rec || (now - rec.windowStart) >= WINDOW_MS) {
+    return { windowStart: now, counts: { poker: 0, blackjack: 0 } };
+  }
+  return rec;
+}
 function getClientIp(req) {
   if (Array.isArray(req.ips) && req.ips.length) return req.ips[0];
 
@@ -872,8 +878,8 @@ const dealLimiter = rateLimit({ windowMs: 60 * 1000, max: 40, standardHeaders: t
 
 app.post('/api/start-hand', async (req, res) => {
   try {
-   // const g = gateStartHand(req, 'poker');
-    //if (!g.ok) return res.status(403).json(g);
+    const g = gateStartHand(req, 'poker');
+    if (!g.ok) return res.status(403).json(g);
 
     ensureBank(req);
 
@@ -1670,8 +1676,8 @@ const bjActionLimiter = rateLimit({ windowMs: 60_000, max: 80, standardHeaders:t
 // ---- /api/bj/start
 app.post('/api/bj/start', bjStartLimiter, async (req, res) => {
   try{
-   // const g = gateStartHand(req, "blackjack");                  // reuse IP gate
-   // if (!g.ok) return res.status(403).json(g);
+   const g = gateStartHand(req, "blackjack");                  // reuse IP gate
+    if (!g.ok) return res.status(403).json(g);
 
     bjEnsure(req);
 
