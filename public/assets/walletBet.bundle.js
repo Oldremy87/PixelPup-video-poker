@@ -7,6 +7,7 @@ const KIBL_GROUP_ADDR = "nexa:tpjkhlhuazsgskkt5hyqn3d0e7l6vfvfg97cf42pprntks4x7v
 const KIBL_TOKEN_HEX = "656bfefce8a0885acba5c809c5afcfbfa62589417d84d54108e6bb42a6f30000";
 const HOUSE_ADDRESS = "nexa:nqtsq5g5pvucuzm2kh92kqtxy5s3zfutq3xgnhh5src65fc3";
 const KIBL_TOKEN_ID = "nexa:tpjkhlhuazsgskkt5hyqn3d0e7l6vfvfg97cf42pprntks4x7vqqqcavzypmt";
+let cachedSession = null;
 async function getSdk() {
   return await import("./chunks/index.web-Does7zZT.js");
 }
@@ -25,7 +26,7 @@ const PUBLIC_NODE = {
 };
 async function connectMainnet(rostrumProvider) {
   if (rostrumProvider.isConnected) return;
-  console.log("[Client] connecting to network...");
+  console.log("[Client] Connecting to network...");
   try {
     await rostrumProvider.connect(PRIVATE_NODE);
     console.log("✅ Connected to Private Node");
@@ -45,6 +46,14 @@ function getWalletCtor(mod) {
   return mod?.Wallet ?? mod?.default?.Wallet;
 }
 async function loadWallet(pass) {
+  if (cachedSession) {
+    const { rostrumProvider: rostrumProvider2 } = cachedSession.sdk;
+    if (!rostrumProvider2.isConnected) {
+      console.log("[Client] Connection dropped, reconnecting...");
+      await connectMainnet(rostrumProvider2);
+    }
+    return cachedSession;
+  }
   const rawB64 = localStorage.getItem(KEY);
   const ivB64 = localStorage.getItem(IV);
   if (!rawB64 || !ivB64) throw new Error("No local wallet. Visit Connect.");
@@ -62,6 +71,7 @@ async function loadWallet(pass) {
   const WalletCtor = getWalletCtor(sdk);
   if (!WalletCtor) throw new Error("Wallet export missing");
   const wallet = new WalletCtor(seed, net);
+  console.log("[Client] Initializing Wallet (Scanning UTXOs)...");
   await wallet.initialize();
   const account = wallet.accountStore.getAccount("2.0");
   if (!account) throw new Error("DApp account (2.0) not found.");
@@ -77,7 +87,8 @@ async function loadWallet(pass) {
     tokenHex: KIBL_TOKEN_HEX,
     tokenGroup: KIBL_GROUP_ADDR
   };
-  return { wallet, account, address, network: net, balances };
+  cachedSession = { wallet, account, address, network: net, balances, sdk };
+  return cachedSession;
 }
 async function placeBet({
   passphrase,
@@ -85,12 +96,12 @@ async function placeBet({
   tokenIdHex,
   feeNexa
 }) {
-  if (!passphrase || passphrase.length < 8) throw new Error("Password required (8+ chars).");
-  console.log("[Client] Loading wallet...");
+  if (!cachedSession && (!passphrase || passphrase.length < 8)) {
+    throw new Error("Password required (8+ chars).");
+  }
   const { wallet, account, address, network } = await loadWallet(passphrase);
-  console.log("[Client] Building Transaction locally...");
+  console.log("[Client] Building Transaction...");
   const signedTx = await wallet.newTransaction(account).onNetwork("mainnet").sendTo(HOUSE_ADDRESS, feeNexa.toString()).sendToToken(HOUSE_ADDRESS, kiblAmount.toString(), KIBL_TOKEN_ID).populate().sign().build();
-  console.log("[Client] Broadcasting via Tunnel...");
   const txId = await wallet.sendTransaction(signedTx);
   console.log("[Client] Bet Sent! TxId:", txId);
   return { txId, network, address, house: HOUSE_ADDRESS };

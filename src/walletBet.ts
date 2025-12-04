@@ -16,6 +16,17 @@ const KIBL_TOKEN_HEX  = '656bfefce8a0885acba5c809c5afcfbfa62589417d84d54108e6bb4
 const HOUSE_ADDRESS   = 'nexa:nqtsq5g5pvucuzm2kh92kqtxy5s3zfutq3xgnhh5src65fc3';
 const KIBL_TOKEN_ID   = 'nexa:tpjkhlhuazsgskkt5hyqn3d0e7l6vfvfg97cf42pprntks4x7vqqqcavzypmt';
 
+// --- SINGLETON CACHE ---
+// This prevents reloading/reconnecting on every bet
+let cachedSession: {
+  wallet: any;
+  account: any;
+  address: any;
+  network: any;
+  balances: any;
+  sdk: any;
+} | null = null;
+
 async function getSdk() {
   return await import('nexa-wallet-sdk');
 }
@@ -34,10 +45,10 @@ const PUBLIC_NODE = {
 };
 
 async function connectMainnet(rostrumProvider: any) {
-  // 1. Check if already connected
+  // 1. Check if already connected (Fast exit)
   if (rostrumProvider.isConnected) return;
 
-  console.log('[Client] connecting to network...');
+  console.log('[Client] Connecting to network...');
 
   // 2. Attempt Private Node (Fast Lane)
   try {
@@ -63,6 +74,18 @@ function getWalletCtor(mod: any) {
 }
 
 export async function loadWallet(pass: string) {
+  // 1. Return Cache if available
+  if (cachedSession) {
+    // Ensure connection is still alive before returning
+    const { rostrumProvider } = cachedSession.sdk;
+    if (!rostrumProvider.isConnected) {
+      console.log('[Client] Connection dropped, reconnecting...');
+      await connectMainnet(rostrumProvider);
+    }
+    return cachedSession;
+  }
+
+  // 2. Initial Load (Decrypt from LocalStorage)
   const rawB64 = localStorage.getItem(KEY);
   const ivB64  = localStorage.getItem(IV);
   if (!rawB64 || !ivB64) throw new Error('No local wallet. Visit Connect.');
@@ -88,13 +111,13 @@ export async function loadWallet(pass: string) {
   if (!WalletCtor) throw new Error('Wallet export missing');
 
   const wallet  = new WalletCtor(seed, net);
-  await wallet.initialize();
+  console.log('[Client] Initializing Wallet (Scanning UTXOs)...');
+  await wallet.initialize(); // <--- This is expensive, we only want to do it once!
 
   const account = wallet.accountStore.getAccount('2.0');
   if (!account) throw new Error('DApp account (2.0) not found.');
   const address = account.getPrimaryAddressKey().address; 
 
-  // ✅ Use account aggregates
   const nexaMinor = Number(account.balance?.confirmed || 0);
   const kiblMinor = Number(account.tokenBalances?.[KIBL_GROUP_ADDR]?.confirmed || 0);
 
@@ -108,7 +131,9 @@ export async function loadWallet(pass: string) {
     tokenGroup: KIBL_GROUP_ADDR,
   };
 
-  return { wallet, account, address, network: net, balances };
+  // 3. Save to Cache
+  cachedSession = { wallet, account, address, network: net, balances, sdk };
+  return cachedSession;
 }
 
 export async function placeBet({
@@ -119,17 +144,18 @@ export async function placeBet({
 }: {
   passphrase: string; kiblAmount: number; tokenIdHex: string; feeNexa: number;
 }) {
-  if (!passphrase || passphrase.length < 8) throw new Error('Password required (8+ chars).');
+  // Passphrase check is only strict if we don't have a cache.
+  // If cached, we ignore the passphrase (already decrypted).
+  if (!cachedSession && (!passphrase || passphrase.length < 8)) {
+     throw new Error('Password required (8+ chars).');
+  }
   
-  console.log('[Client] Loading wallet...');
-  
-  // 1. Load Wallet (Auto-connects to private node)
+  // 1. Get Wallet (Cached or New)
   const { wallet, account, address, network } = await loadWallet(passphrase);
   
-  console.log('[Client] Building Transaction locally...');
+  console.log('[Client] Building Transaction...');
 
-  // 2. BUILD LOCALLY
-  // Create the builder but DO NOT call .build() yet!
+  // 2. BUILD
   const signedTx = await wallet.newTransaction(account)
     .onNetwork('mainnet')
     .sendTo(HOUSE_ADDRESS, feeNexa.toString())
@@ -137,9 +163,9 @@ export async function placeBet({
     .populate()
     .sign()
     .build();
-  console.log('[Client] Broadcasting via Tunnel...');
   
-  // 4. BROADCAST
+  // 3. BROADCAST
+  // No "Loading..." or "Connecting..." logs should appear here on 2nd bet
   const txId = await wallet.sendTransaction(signedTx);
 
   console.log('[Client] Bet Sent! TxId:', txId);
