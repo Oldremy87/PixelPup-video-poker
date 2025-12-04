@@ -1152,25 +1152,56 @@ app.get('/api/fair/:handId', async (req, res) => {
   } catch { return res.status(500).json({ ok:false, error:'server_error' }); }
 });
 
-const rewardLimiter = rateLimit({ windowMs: 60 * 1000, max: 12, standardHeaders: true, legacyHeaders: false });
 // DAILY REWARD (minor units throughout)
 app.post('/api/daily-reward', rewardLimiter, async (req, res) => {
   const ip = getClientIp(req);
   const uid = req.uid;
-  const FAUCET_AMOUNT = 10000 * 100; // 1000 KIBL
+  const FAUCET_AMOUNT = 10000 * 100; // 10,000 KIBL (User increased amount)
+  const COOLDOWN = 24 * 60 * 60 * 1000; // 24 Hours
 
   try {
-    // 1. Ensure Network Connection
+    // 1. SESSION CHECK (Fastest)
+    // If the cookie says they claimed recently, reject immediately.
+    const now = Date.now();
+    const lastClaim = req.session.lastDailyRewardAt || 0;
+    if (now - lastClaim < COOLDOWN) {
+        const minsLeft = Math.ceil((COOLDOWN - (now - lastClaim)) / 60000);
+        return res.status(400).json({ 
+            ok: false, 
+            error: 'Daily reward already claimed.', 
+            retryInMs: COOLDOWN - (now - lastClaim) 
+        });
+    }
+
+    // 2. DATABASE CHECK (Robust)
+    // Prevents clearing cookies to claim again. Checks User ID and IP.
+    if (hasDb) {
+        const p = await db();
+        const { rows } = await p.query(
+            `SELECT created_at FROM payouts 
+             WHERE type = 'faucet' 
+             AND (user_id = $1 OR ip = $2)
+             AND created_at > NOW() - INTERVAL '24 hours'
+             LIMIT 1`,
+            [uid, ip]
+        );
+
+        if (rows.length > 0) {
+            // Update session to match reality so we catch them faster next time
+            req.session.lastDailyRewardAt = new Date(rows[0].created_at).getTime();
+            return res.status(400).json({ ok: false, error: 'Daily reward already claimed today.' });
+        }
+    }
+
+    // 3. Ensure Network Connection
     await ensureRostrum();
 
-    // 2. LAZY LOAD WALLET (The Speed Fix)
-    // Only run the slow init/scan if we haven't done it yet.
+    // 4. LAZY LOAD WALLET
     if (!cachedServerWallet) {
         console.log('[Wallet] Initializing Hot Wallet for the first time...');
         const secret = process.env.HOT_WALLET_SECRET;
         if (!secret) throw new Error('HOT_WALLET_SECRET missing');
 
-        // Import
         let w;
         if (secret.trim().startsWith('xprv') || secret.trim().startsWith('F6rxz')) {
              w = Wallet.fromXpriv(secret.trim(), 'mainnet');
@@ -1178,25 +1209,21 @@ app.post('/api/daily-reward', rewardLimiter, async (req, res) => {
              w = new Wallet(secret, 'mainnet');
         }
 
-        // Scan Chain (The slow part - happens once)
         await w.initialize();
         
-        // Ensure Account 2.0 exists
         if (!w.accountStore.getAccount('2.0')) {
              console.log('[Wallet] Creating Account 2.0...');
              await w.newAccount('NEXA'); 
         }
         
-        // Save to cache
         cachedServerWallet = w;
-        console.log('[Wallet] Initialization Complete. Cached for future requests.');
+        console.log('[Wallet] Initialization Complete.');
     }
 
-    // 3. Use the Cached Wallet
+    // 5. Get Account & Address
     const spendingAccount = cachedServerWallet.accountStore.getAccount('2.0');
     if (!spendingAccount) throw new Error('Hot Wallet Account 2.0 missing');
 
-    // 4. Address Lookup
     let targetAddress = null;
     if (hasDb && uid) {
        const p = await db();
@@ -1208,7 +1235,7 @@ app.post('/api/daily-reward', rewardLimiter, async (req, res) => {
       return res.status(400).json({ ok: false, error: 'Link valid wallet first.' });
     }
 
-    // 5. Build & Send (Instant now)
+    // 6. BUILD & SEND
     console.log(`[Faucet] Sending ${FAUCET_AMOUNT} KIBL to ${targetAddress}...`);
     
     const tx = await cachedServerWallet.newTransaction(spendingAccount)
@@ -1219,11 +1246,13 @@ app.post('/api/daily-reward', rewardLimiter, async (req, res) => {
       .sign()
       .build();
 
-    // Use provider to broadcast
     const txId = await cachedServerWallet.sendTransaction(tx);
     console.log('[Faucet] Success! TxId:', txId);
 
-    // 6. DB Logging
+    // 7. RECORD SUCCESS (Database & Session)
+    // Critical: This sets the "Timer" for next time
+    req.session.lastDailyRewardAt = Date.now();
+    
     if (hasDb) {
       const p = await db();
       await p.query(
@@ -1237,7 +1266,6 @@ app.post('/api/daily-reward', rewardLimiter, async (req, res) => {
 
   } catch (e) {
     console.error('Faucet Error:', e);
-    // If the wallet state got corrupted, clear cache so next try re-initializes
     if (e.message.includes('UTXO') || e.message.includes('input')) {
         cachedServerWallet = null;
     }
