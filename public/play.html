@@ -1450,7 +1450,7 @@ async function onClaimPayout() {
       credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        playerAddress,
+        playerAddress: addrVal,
         'h-captcha-response': token    // <- standard field name
       })
     });
