@@ -1153,7 +1153,7 @@ app.get('/api/fair/:handId', async (req, res) => {
 });
 
 // DAILY REWARD (minor units throughout)
-app.post('/api/daily-reward', rewardLimiter, async (req, res) => {
+app.post('/api/daily-reward',  async (req, res) => {
   const ip = getClientIp(req);
   const uid = req.uid;
   const FAUCET_AMOUNT = 10000 * 100; // 10,000 KIBL (User increased amount)
