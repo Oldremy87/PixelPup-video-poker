@@ -2,50 +2,59 @@
 import { Buffer } from 'buffer';
 import process from 'process';
 import * as nodeCrypto from 'crypto-browserify';
+
+// Polyfills
 (globalThis as any).Buffer  ||= Buffer;
 (globalThis as any).process ||= process;
 (globalThis as any).__nodeCrypto = nodeCrypto;
 
 const KEY='kk_wallet_v1', IV='kk_wallet_iv_v1';
 
-// Fill these from your config / env / window:
+// Constants
 const KIBL_GROUP_ADDR = 'nexa:tpjkhlhuazsgskkt5hyqn3d0e7l6vfvfg97cf42pprntks4x7vqqqcavzypmt';
 const KIBL_TOKEN_HEX  = '656bfefce8a0885acba5c809c5afcfbfa62589417d84d54108e6bb42a6f30000';
+const HOUSE_ADDRESS   = 'nexa:nqtsq5g5pvucuzm2kh92kqtxy5s3zfutq3xgnhh5src65fc3';
+const KIBL_TOKEN_ID   = 'nexa:tpjkhlhuazsgskkt5hyqn3d0e7l6vfvfg97cf42pprntks4x7vqqqcavzypmt';
 
 async function getSdk() {
-  return await import('nexa-wallet-sdk'); // vite alias -> browser ESM build
+  return await import('nexa-wallet-sdk');
 }
-const MAINNET = {
+
+// --- NODE CONFIGURATIONS ---
+const PRIVATE_NODE = {
   scheme: 'wss' as const,
-  host: 'electrum.nexa.org',
+  host: 'node.remy-dev.com', // Your Bare Metal NVMe Node
+  port: 443,                 // Cloudflare Tunnel
+};
+
+const PUBLIC_NODE = {
+  scheme: 'wss' as const,
+  host: 'electrum.nexa.org', // Backup
   port: 20004,
 };
+
 async function connectMainnet(rostrumProvider: any) {
   // 1. Check if already connected
-  if ((globalThis as any).__kk_rostrum_mainnet_ok && rostrumProvider.isConnected) return;
+  if (rostrumProvider.isConnected) return;
 
-  for (let i = 0; i < 3; i++) {
-    try {
-      // Force disconnect on retry to clear "zombie" states
-      if (i > 0) try { await rostrumProvider.disconnect(); } catch {}
-      
-      console.log(`[Rostrum] Connecting... (Attempt ${i+1})`);
-      await rostrumProvider.connect(MAINNET);
-      
-      (globalThis as any).__kk_rostrum_mainnet_ok = true;
-      return; // Success
-    } catch (e) {
-      // SAFE LOGGING: Handle 'undefined' errors
-      const msg = e ? (e.message || JSON.stringify(e)) : 'Unknown Network Error';
-      console.warn(`[Rostrum] Connection failed (Attempt ${i+1}):`, msg);
-      
-      if (i === 2) {
-          // THROW A REAL ERROR OBJECT
-          throw new Error(msg === 'Unknown Network Error' ? 'Connection dropped. Please refresh.' : msg);
-      }
-      // Wait before retry (1s, 2s)
-      await new Promise(r => setTimeout(r, 1000 * (i + 1))); 
-    }
+  console.log('[Client] connecting to network...');
+
+  // 2. Attempt Private Node (Fast Lane)
+  try {
+    await rostrumProvider.connect(PRIVATE_NODE);
+    console.log('✅ Connected to Private Node');
+    return;
+  } catch (e) {
+    console.warn('⚠️ Private node unreachable, switching to public backup...');
+  }
+
+  // 3. Fallback to Public Node (Slow Lane)
+  try {
+    await rostrumProvider.connect(PUBLIC_NODE);
+    console.log('⚠️ Connected to Public Backup Node');
+  } catch (e) {
+    console.error('❌ All network nodes failed.');
+    throw new Error('Network connection failed. Please refresh.');
   }
 }
 
@@ -66,7 +75,7 @@ export async function loadWallet(pass: string) {
   const h   = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(pass));
   const key = await crypto.subtle.importKey('raw', h, 'AES-GCM', false, ['decrypt']);
   const pt  = await crypto.subtle.decrypt({ name:'AES-GCM', iv }, key, ct);
-  const { seed, net } = JSON.parse(new TextDecoder().decode(pt)); // 'mainnet'|'testnet'
+  const { seed, net } = JSON.parse(new TextDecoder().decode(pt)); 
 
   // --- SDK + provider
   const sdk = await getSdk();
@@ -83,9 +92,9 @@ export async function loadWallet(pass: string) {
 
   const account = wallet.accountStore.getAccount('2.0');
   if (!account) throw new Error('DApp account (2.0) not found.');
-  const address = account.getPrimaryAddressKey().address; // nexa:...
+  const address = account.getPrimaryAddressKey().address; 
 
-  // ✅ Use account aggregates (no UTXO math)
+  // ✅ Use account aggregates
   const nexaMinor = Number(account.balance?.confirmed || 0);
   const kiblMinor = Number(account.tokenBalances?.[KIBL_GROUP_ADDR]?.confirmed || 0);
 
@@ -102,19 +111,6 @@ export async function loadWallet(pass: string) {
   return { wallet, account, address, network: net, balances };
 }
 
-async function csrf() {
-  if ((window as any).csrfToken) return (window as any).csrfToken;
-  const r = await fetch('/api/csrf', { credentials:'include' });
-  const j = await r.json();
-  (window as any).csrfToken = j.csrfToken;
-  return j.csrfToken;
-}
-
-function cleanNexa(addr: string): string {
-  const m = String(addr || '').match(/^(nexa:[a-z0-9]+)/i);
-  return m ? m[1] : '';
-}
-
 export async function placeBet({
   passphrase,
   kiblAmount,   
@@ -125,42 +121,28 @@ export async function placeBet({
 }) {
   if (!passphrase || passphrase.length < 8) throw new Error('Password required (8+ chars).');
   
-  // 1. Load wallet (connects to mainnet)
+  console.log('[Client] Loading wallet...');
+  
+  // 1. Load Wallet (Auto-connects to private node)
   const { wallet, account, address, network } = await loadWallet(passphrase);
   
-  // 2. Fetch Unsigned TX from Server
-  const CSRF = await csrf();
-  const r = await fetch('/api/bet/build-unsigned', {
-    method: 'POST',
-    credentials: 'include',
-    headers: { 'Content-Type': 'application/json', 'CSRF-Token': CSRF },
-    body: JSON.stringify({ 
-      fromAddress: address, 
-      kiblAmount, 
-      tokenIdHex, 
-      feeNexa 
-    })
-  });
-  const j = await r.json();
-  if (!r.ok || !j.ok) throw new Error(j?.error || 'build_unsigned_failed');
+  console.log('[Client] Building Transaction locally...');
 
+  // 2. BUILD LOCALLY
+  // Create the builder but DO NOT call .build() yet!
+  const signedTx = await wallet.newTransaction(account)
+    .onNetwork('mainnet')
+    .sendTo(HOUSE_ADDRESS, feeNexa.toString())
+    .sendToToken(HOUSE_ADDRESS, kiblAmount.toString(), KIBL_TOKEN_ID)
+    .populate()
+    .sign()
+    .build();
+  console.log('[Client] Broadcasting via Tunnel...');
   
-  const signedTx = await wallet
-    .newTransaction(account)     
-    .parseTxHex(j.unsignedTx)    
-    .sign()                      
-    .build();                   
+  // 4. BROADCAST
+  const txId = await wallet.sendTransaction(signedTx);
 
-  const br = await fetch('/api/tx/broadcast', {
-    method: 'POST',
-    credentials: 'include',
-    headers: { 'Content-Type': 'application/json', 'CSRF-Token': CSRF },
-    body: JSON.stringify({ hex: signedTx })
-  });
-  const bj = await br.json().catch(() => ({} as any));
-  
-  console.log('[placeBet] broadcast ok?', br.ok, 'payload', bj);
-  if (!br.ok || !bj.ok) throw new Error(bj?.error || 'broadcast_failed');
+  console.log('[Client] Bet Sent! TxId:', txId);
 
-  return { txId: bj.txid, network, address, house: j.house };
+  return { txId, network, address, house: HOUSE_ADDRESS };
 }

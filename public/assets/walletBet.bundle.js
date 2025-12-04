@@ -5,34 +5,40 @@ globalThis.__nodeCrypto = nodeCrypto;
 const KEY = "kk_wallet_v1", IV = "kk_wallet_iv_v1";
 const KIBL_GROUP_ADDR = "nexa:tpjkhlhuazsgskkt5hyqn3d0e7l6vfvfg97cf42pprntks4x7vqqqcavzypmt";
 const KIBL_TOKEN_HEX = "656bfefce8a0885acba5c809c5afcfbfa62589417d84d54108e6bb42a6f30000";
+const HOUSE_ADDRESS = "nexa:nqtsq5g5pvucuzm2kh92kqtxy5s3zfutq3xgnhh5src65fc3";
+const KIBL_TOKEN_ID = "nexa:tpjkhlhuazsgskkt5hyqn3d0e7l6vfvfg97cf42pprntks4x7vqqqcavzypmt";
 async function getSdk() {
   return await import("./chunks/index.web-Does7zZT.js");
 }
-const MAINNET = {
+const PRIVATE_NODE = {
+  scheme: "wss",
+  host: "node.remy-dev.com",
+  // Your Bare Metal NVMe Node
+  port: 443
+  // Cloudflare Tunnel
+};
+const PUBLIC_NODE = {
   scheme: "wss",
   host: "electrum.nexa.org",
+  // Backup
   port: 20004
 };
 async function connectMainnet(rostrumProvider) {
-  if (globalThis.__kk_rostrum_mainnet_ok && rostrumProvider.isConnected) return;
-  for (let i = 0; i < 3; i++) {
-    try {
-      if (i > 0) try {
-        await rostrumProvider.disconnect();
-      } catch {
-      }
-      console.log(`[Rostrum] Connecting... (Attempt ${i + 1})`);
-      await rostrumProvider.connect(MAINNET);
-      globalThis.__kk_rostrum_mainnet_ok = true;
-      return;
-    } catch (e) {
-      const msg = e ? e.message || JSON.stringify(e) : "Unknown Network Error";
-      console.warn(`[Rostrum] Connection failed (Attempt ${i + 1}):`, msg);
-      if (i === 2) {
-        throw new Error(msg === "Unknown Network Error" ? "Connection dropped. Please refresh." : msg);
-      }
-      await new Promise((r) => setTimeout(r, 1e3 * (i + 1)));
-    }
+  if (rostrumProvider.isConnected) return;
+  console.log("[Client] connecting to network...");
+  try {
+    await rostrumProvider.connect(PRIVATE_NODE);
+    console.log("✅ Connected to Private Node");
+    return;
+  } catch (e) {
+    console.warn("⚠️ Private node unreachable, switching to public backup...");
+  }
+  try {
+    await rostrumProvider.connect(PUBLIC_NODE);
+    console.log("⚠️ Connected to Public Backup Node");
+  } catch (e) {
+    console.error("❌ All network nodes failed.");
+    throw new Error("Network connection failed. Please refresh.");
   }
 }
 function getWalletCtor(mod) {
@@ -73,13 +79,6 @@ async function loadWallet(pass) {
   };
   return { wallet, account, address, network: net, balances };
 }
-async function csrf() {
-  if (window.csrfToken) return window.csrfToken;
-  const r = await fetch("/api/csrf", { credentials: "include" });
-  const j = await r.json();
-  window.csrfToken = j.csrfToken;
-  return j.csrfToken;
-}
 async function placeBet({
   passphrase,
   kiblAmount,
@@ -87,32 +86,14 @@ async function placeBet({
   feeNexa
 }) {
   if (!passphrase || passphrase.length < 8) throw new Error("Password required (8+ chars).");
+  console.log("[Client] Loading wallet...");
   const { wallet, account, address, network } = await loadWallet(passphrase);
-  const CSRF = await csrf();
-  const r = await fetch("/api/bet/build-unsigned", {
-    method: "POST",
-    credentials: "include",
-    headers: { "Content-Type": "application/json", "CSRF-Token": CSRF },
-    body: JSON.stringify({
-      fromAddress: address,
-      kiblAmount,
-      tokenIdHex,
-      feeNexa
-    })
-  });
-  const j = await r.json();
-  if (!r.ok || !j.ok) throw new Error(j?.error || "build_unsigned_failed");
-  const signedTx = await wallet.newTransaction(account).parseTxHex(j.unsignedTx).sign().build();
-  const br = await fetch("/api/tx/broadcast", {
-    method: "POST",
-    credentials: "include",
-    headers: { "Content-Type": "application/json", "CSRF-Token": CSRF },
-    body: JSON.stringify({ hex: signedTx })
-  });
-  const bj = await br.json().catch(() => ({}));
-  console.log("[placeBet] broadcast ok?", br.ok, "payload", bj);
-  if (!br.ok || !bj.ok) throw new Error(bj?.error || "broadcast_failed");
-  return { txId: bj.txid, network, address, house: j.house };
+  console.log("[Client] Building Transaction locally...");
+  const signedTx = await wallet.newTransaction(account).onNetwork("mainnet").sendTo(HOUSE_ADDRESS, feeNexa.toString()).sendToToken(HOUSE_ADDRESS, kiblAmount.toString(), KIBL_TOKEN_ID).populate().sign().build();
+  console.log("[Client] Broadcasting via Tunnel...");
+  const txId = await wallet.sendTransaction(signedTx);
+  console.log("[Client] Bet Sent! TxId:", txId);
+  return { txId, network, address, house: HOUSE_ADDRESS };
 }
 export {
   loadWallet,
