@@ -1654,7 +1654,7 @@ async function onClaimPayout() {
 
     // C. Local Storage
     state.localWallet = !!localStorage.getItem('kk_wallet_v1');
-    const btnBackup = document.getElementById('btnBackup');
+   const btnBackup = document.getElementById('btnBackup');
     const backupSection = document.getElementById('backupSection');
     
     if (state.localWallet && backupSection) {
@@ -1662,7 +1662,6 @@ async function onClaimPayout() {
     }
 
     if (btnBackup) {
-        // Clone to clear old listeners
         const newBackup = btnBackup.cloneNode(true);
         btnBackup.parentNode.replaceChild(newBackup, btnBackup);
         
@@ -1671,14 +1670,13 @@ async function onClaimPayout() {
             if (!pass) return;
 
             try {
-                // FIX: Import module as * to handle named exports safely
-                const module = await import("/assets/walletBet.bundle.js");
+                // FIX: Add timestamp ?t=... to force browser to ignore cache and get the new file
+                const module = await import(`/assets/walletBet.bundle.js?t=${Date.now()}`);
                 
-                // Robust extraction: Check named export, then default
                 const recoverFn = module.recoverSeed || (module.default && module.default.recoverSeed);
 
                 if (typeof recoverFn !== 'function') {
-                    throw new Error("Recovery function not found in bundle. Please clear cache.");
+                    throw new Error("Recovery function still missing. Please Hard Refresh (Ctrl+F5).");
                 }
 
                 const seed = await recoverFn(pass);
@@ -1694,7 +1692,7 @@ async function onClaimPayout() {
                     prompt("Here is your Secret Recovery Phrase. Copy it somewhere safe:", seed);
                 }
             } catch (e) {
-                console.error(e); // Log full error for debugging
+                console.error(e);
                 alert("Error: " + (e.message || String(e)));
             }
         };
