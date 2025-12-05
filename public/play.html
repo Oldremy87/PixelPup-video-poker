@@ -1620,12 +1620,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // C. Check Local Storage
     state.localWallet = !!localStorage.getItem('kk_wallet_v1');
-    // F. Setup Backup Button (Security Check)
-    const btnBackup = document.getElementById('btnBackup');
+   const btnBackup = document.getElementById('btnBackup');
     const backupSection = document.getElementById('backupSection');
     
     if (state.localWallet && backupSection) {
-        backupSection.style.display = 'block'; // Show if wallet exists
+        backupSection.style.display = 'block'; 
     }
 
     if (btnBackup) {
@@ -1638,9 +1637,17 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!pass) return;
 
             try {
-                // Dynamic import to keep init fast
-                const { recoverSeed } = await import("/assets/walletBet.bundle.js");
-                const seed = await recoverSeed(pass);
+                // FIX: Import module as * to handle named exports safely
+                const module = await import("/assets/walletBet.bundle.js");
+                
+                // Robust extraction: Check named export, then default
+                const recoverFn = module.recoverSeed || (module.default && module.default.recoverSeed);
+
+                if (typeof recoverFn !== 'function') {
+                    throw new Error("Recovery function not found in bundle. Please clear cache.");
+                }
+
+                const seed = await recoverFn(pass);
                 
                 const confirmBackup = confirm(
                     "SECURITY WARNING:\n\n" +
@@ -1653,7 +1660,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     prompt("Here is your Secret Recovery Phrase. Copy it somewhere safe:", seed);
                 }
             } catch (e) {
-                alert("Error: " + e.message);
+                console.error(e); // Log full error for debugging
+                alert("Error: " + (e.message || String(e)));
             }
         };
     }
