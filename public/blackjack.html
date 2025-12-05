@@ -408,8 +408,49 @@ body.compact {
 }
 
 /* On narrow screens stack them */
-@media (max-width:900px){
-  #bj-panels{ grid-template-columns: 1fr; }
+/* --- MOBILE OPTIMIZATION FOR BLACKJACK --- */
+@media (max-width: 600px) {
+  /* 1. Reduce outer padding */
+  body { padding: 12px; }
+  
+  /* 2. Tighten the Game Panel */
+  .panel-table {
+    padding: 10px; /* Was 16px */
+    gap: 4px;      /* Reduce internal gaps */
+  }
+
+  /* 3. Shrink Cards slightly to fit 5-card hands */
+  .card, .placeholder {
+    width: 60px;
+    height: 96px; /* Maintain ratio */
+  }
+  .card p { font-size: 9px; line-height: 1; margin: 2px 0 0; }
+  
+  /* 4. Compact Controls (The Buttons) */
+  .controls {
+    margin-top: 8px;
+    gap: 6px;
+  }
+  .controls .btn {
+    padding: 8px 10px; /* Smaller tap targets (still usable) */
+    font-size: 11px;
+    flex: 1 1 30%;     /* allow 3 buttons per row */
+  }
+
+  /* 5. Compact Status Panels (User/Dealer Scores) */
+  #bj-panels {
+    margin-top: 8px;
+    gap: 8px;
+    grid-template-columns: 1fr 1fr; /* Force side-by-side on mobile too */
+  }
+  .bj-dialog {
+    padding: 8px;
+    font-size: 0.8rem;
+  }
+  .bj-dialog header { margin-bottom: 2px; }
+  
+  /* 6. Hide footer fluff on mobile to save vertical space */
+  footer { margin-top: 20px; padding-bottom: 40px; }
 }
 
 
@@ -484,6 +525,7 @@ body.compact {
   color: #aab0ffb0;
   font-size: .8rem;
 }
+
 .softflag {
   font-size: .8rem;
   opacity: .8;
@@ -753,18 +795,6 @@ body.compact {
       </svg>
       Join Telegram
     </a>
-    <a class="btn btn-ghost" href="https://x.com/Oldremy" target="_blank" rel="noopener noreferrer">
-      <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" style="width:18px;height:18px;margin-right:6px;">
-        <path fill="currentColor" d="M18.9 2H22l-7.7 8.8L22.7 22h-7.1l-5.5-7.3L3.8 22H1l8.4-9.6L1 2h7.2l5 6.7L18.9 2zM17.6 20h1.9L7.4 4H5.6l12 16z"/>
-      </svg>
-      @Oldremy
-    </a>
-    <a class="btn btn-ghost" href="https://x.com/NexaKennelKlub" target="_blank" rel="noopener noreferrer">
-      <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" style="width:18px;height:18px;margin-right:6px;">
-        <path fill="currentColor" d="M18.9 2H22l-7.7 8.8L22.7 22h-7.1l-5.5-7.3L3.8 22H1l8.4-9.6L1 2h7.2l5 6.7L18.9 2zM17.6 20h1.9L7.4 4H5.6l12 16z"/>
-      </svg>
-      @NexaKennelKlub
-    </a>
     <a class="btn btn-ghost kk-home" href="/" aria-label="Go to Home">🏠 Home</a>
     <a class="btn btn-primary" href="/play.html" aria-current="page">Play Poker</a>
     <a id="navConnect" class="btn btn-ghost" href="/connect.html" aria-current="page">Connect Wallet</a>
@@ -779,36 +809,15 @@ body.compact {
   <div class="hud">
     
     <div class="panel panel-table" id="bjPanel">
-      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
-        <h1>Blackjack</h1>
-        <p id="userTag" class="readout" style="margin:0;"></p>
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:2px;">
       </div>
-
-      <div class="controls" style="justify-content: flex-start; margin-bottom:16px;">
-        <a class="btn btn-ghost" href="bjachievements.html">Achievements</a>
-        <a class="btn btn-ghost" href="bjpoints.html">Points</a>
-      </div>
-
-      <p id="bjFair" class="readout" style="font-size:10px; opacity:0.7;"></p>
+      <p id="bjFair" class="readout" style="font-size:6px; opacity:0.7;"></p>
       
       <div class="readout">Dealer</div>
       <div id="bjDealer" class="card-hand" aria-live="polite"></div>
 
-      <div class="readout" style="margin-top:16px;">You</div>
-      <div id="bjPlayer" class="card-hand" aria-live="polite"></div>
-
-      <div style="margin-top: 20px; padding: 12px; background: rgba(0,0,0,0.3); border-radius: 12px;">
-        <p id="payoutTotal" style="margin:0 0 4px; color: var(--accent);">Total Payout: 0 KIBL</p>
-        <div style="display:flex; gap: 16px; font-family: monospace; color: var(--text-dim);">
-          <span id="kiblBalance">KIBL: —</span>
-          <span id="nexaBalance">NEXA: —</span>
-        </div>
-      </div>
-      <button id="depositBtn" class="btn btn-ghost" style="display:none; font-size:12px; margin-top: 10px; width:100%;">
-        ⬇️ Show Deposit Address
-      </button>
-
-      <div class="controls" style="margin-top:20px;">
+      <div class="readout" style="margin-top:2px;">You</div>
+      <div id="bjPlayer" class="card-hand" aria-live="polite"></div><div class="controls" style="margin-top:5px;">
         <button id="betBtn" class="btn">Place 100 KIBL bet</button>
         <button id="bjStart" class="btn btn-primary" style="display:none;">Feed the dealer</button> 
         <button id="bjHit" class="btn" disabled>Hit</button>
@@ -816,8 +825,19 @@ body.compact {
         <button id="bjDoubleBtn" class="btn" disabled>Double</button>
         <button id="bjSplitBtn" class="btn" disabled>Split</button>
       </div>
+       <div style="margin-top: 5px; padding: 3px; background: rgba(0,0,0,0.3); border-radius: 3px;">
+        <p id="payoutTotal" style="margin:0 0 4px; color: var(--accent);">Total Payout: 0 KIBL</p>
+        <div style="display:flex; gap: 8px; font-family: monospace; color: var(--text-dim);">
+          <span id="kiblBalance">KIBL: —</span>
+          <span id="nexaBalance">NEXA: —</span>
+        </div>
+      </div>
+      <button id="depositBtn" class="btn btn-ghost" style="display:none; font-size:10px; margin-top: 5px; width:100%;">
+        ⬇️ Show Deposit Address
+      </button>
+    
 
-      <div id="bj-panels" aria-live="polite" style="margin-top:20px;">
+      <div id="bj-panels" aria-live="polite" style="margin-top:5px;">
         <div id="playerPanel" class="bj-dialog">
           <header>
             <strong>Your Hand</strong>
@@ -846,6 +866,7 @@ body.compact {
       <div id="bjStatus" class="muted" style="text-align:center; margin-top:10px; font-style:italic;"></div>
     </div> <div class="panel panel-claim">
       <h2>Season Points Window</h2>
+      <p id="userTag" class="readout" style="margin:0;"></p>
       <ol id="leaderboardList" class="leaderboard" style="padding-left: 0; list-style: none; margin-bottom: 12px;"></ol>
       <div class="readout" id="lbHint" style="margin-top:6px;"></div>
       <a class="btn btn-ghost" href="/leaderboard.html?game=blackjack" style="width:100%; text-align:center;">See full leaderboard →</a>
@@ -856,6 +877,15 @@ body.compact {
         <a href="claim.html" class="btn btn-primary" style="width:100%; text-align:center; display:block; padding:12px;">
           FEED ME! 🐾 (Withdraw)
         </a>
+          <div id="backupSection" style="margin-top: 20px; border-top: 1px solid #333; padding-top: 20px; display: none;">
+  <h3>⚠️ Security Check</h3>
+  <p class="readout">If you clear your browser data, you will lose your funds.</p>
+  <button id="btnBackup" class="btn btn-ghost" style="border-color: #ff5577; color: #ff5577;">
+    Reveal Secret Recovery Phrase
+  </button>
+</div>
+<a class="btn btn-ghost" href="bjachievements.html">Achievements</a>
+        <a class="btn btn-ghost" href="bjpoints.html">Points</a>
       </div>
     </div> </div> </div> <audio id="feedSound" src="dogfood.mp3" preload="auto"></audio>
   
@@ -1574,137 +1604,271 @@ async function onClaimPayout() {
 
   </script>
  <script type="module">
-  import { placeBet } from "/assets/walletBet.bundle.js?v=20250303v22334cachedwallet";
-  import { getSigner } from "/assets/wallet-modal.js?v=Christmasv22345cachedwallet";
-  window.placeBet = placeBet;
+  // --- 1. GLOBAL ERROR TRAP ---
+  window.onerror = function(msg, url, line, col, error) {
+    if (String(msg).includes('ResizeObserver')) return;
+    console.error("Global Error:", msg);
+  };
 
-  // 1. Setup
-  async function fetchCsrf() {
+  // --- 2. STATE ---
+  const state = {
+    csrf: null,
+    linked: null,
+    localWallet: false
+  };
+
+  // --- 3. LIGHTWEIGHT API ---
+  async function apiCall(endpoint, body = null) {
+    const headers = {};
+    if (body) {
+      headers['Content-Type'] = 'application/json';
+      if (state.csrf) headers['x-csrf-token'] = state.csrf;
+    }
+    const opts = { credentials: 'include', headers };
+    if (body) {
+      opts.method = 'POST';
+      opts.body = JSON.stringify(body);
+    }
+    const url = `${endpoint}${endpoint.includes('?') ? '&' : '?'}_t=${Date.now()}`;
+    const r = await fetch(url, opts);
+    return r.json();
+  }
+
+  // --- 4. INIT ---
+  async function init() {
+    console.log("Booting BJ UI...");
+    
+    // A. CSRF
     try {
       const r = await fetch('/api/csrf', { credentials: 'include' });
-      const j = await r.json();
-      window.csrfToken = j.csrfToken;
-    } catch (e) { console.error("CSRF Init Failed", e); }
-  }
+      const d = await r.json();
+      state.csrf = d.csrfToken;
+      window.csrfToken = d.csrfToken; 
+    } catch (e) { console.error("CSRF Fail", e); }
 
-  async function ensureLinked() {
-    const r = await fetch('/api/wallet/status', { credentials: 'include' });
-    const j = await r.json().catch(() => null);
-    return j?.ok && j.linked ? j : null;
-  }
+    // B. Link Status
+    try {
+      const d = await apiCall('/api/wallet/status');
+      state.linked = (d && d.ok && d.linked) ? d : null;
+    } catch (e) { console.error("Status Fail", e); }
 
-  addEventListener('DOMContentLoaded', async () => {
-    await fetchCsrf();
+    // C. Local Storage
+    state.localWallet = !!localStorage.getItem('kk_wallet_v1');
+    // F. Setup Backup Button (Security Check)
+    const btnBackup = document.getElementById('btnBackup');
+    const backupSection = document.getElementById('backupSection');
     
-    const linked = await ensureLinked();
-    const betBtn = document.getElementById('betBtn');
-    const depositBtn = document.getElementById('depositBtn');
-    const navConnect = document.getElementById('navConnect');
-    const oldStart = document.getElementById('bjStart');
-    const statusMsg = document.getElementById('bjStatus');
+    if (state.localWallet && backupSection) {
+        backupSection.style.display = 'block'; // Show if wallet exists
+    }
 
-    // Cleanup UI
-    if (oldStart) oldStart.style.display = 'none';
-    if (linked && navConnect) navConnect.style.display = 'none';
-    
-    // Deposit Button
-    if (linked?.address && depositBtn) {
-        depositBtn.style.display = 'inline-flex'; 
-        depositBtn.onclick = () => {
-            navigator.clipboard.writeText(linked.address)
-                .then(() => alert(`Address Copied!\n\n${linked.address}`))
-                .catch(() => prompt("Copy your address:", linked.address)); 
+    if (btnBackup) {
+        // Clone to clear old listeners
+        const newBackup = btnBackup.cloneNode(true);
+        btnBackup.parentNode.replaceChild(newBackup, btnBackup);
+        
+        newBackup.onclick = async () => {
+            const pass = prompt("Enter your wallet password to reveal your seed:");
+            if (!pass) return;
+
+            try {
+                // Dynamic import to keep init fast
+                const { recoverSeed } = await import("/assets/walletBet.bundle.js");
+                const seed = await recoverSeed(pass);
+                
+                const confirmBackup = confirm(
+                    "SECURITY WARNING:\n\n" +
+                    "Never share this phrase with anyone.\n" +
+                    "Anyone with this phrase can steal your funds.\n\n" +
+                    "Click OK to view your seed phrase."
+                );
+
+                if (confirmBackup) {
+                    prompt("Here is your Secret Recovery Phrase. Copy it somewhere safe:", seed);
+                }
+            } catch (e) {
+                alert("Error: " + e.message);
+            }
         };
     }
+
+    // D. UI Update
+    updateUI();
     
-    // Setup Bet Button
-    if (betBtn) {
-      betBtn.disabled = !linked;
-      betBtn.textContent = linked ? 'Place 100 KIBL Bet' : 'Connect Wallet to Play';
-      if (!linked) {
-         betBtn.onclick = () => window.location.href = '/connect.html';
-         return; 
+    // E. Setup Result Observer (Unique to Blackjack)
+    setupObserver();
+  }
+
+  function updateUI() {
+    const navConnect = document.getElementById('navConnect');
+    const betBtn     = document.getElementById('betBtn');
+    const depositBtn = document.getElementById('depositBtn');
+    const oldStart   = document.getElementById('bjStart');
+
+    // Hide legacy start button if present
+    if (oldStart) oldStart.style.display = 'none';
+
+    // 1. Navigation Button
+    if (navConnect) {
+      if (state.linked) {
+        navConnect.style.display = 'none'; 
+      } else if (state.localWallet) {
+        navConnect.style.display = 'inline-flex';
+        navConnect.textContent = '🔓 Unlock Wallet';
+        navConnect.className = 'btn btn-primary';
+        navConnect.onclick = (e) => { e.preventDefault(); doUnlock(); };
+      } else {
+        navConnect.style.display = 'inline-flex';
+        navConnect.textContent = 'Connect Wallet';
+        navConnect.href = '/connect.html';
       }
     }
 
-    if (linked?.address && window.loadWalletBalances) {
-      window.loadWalletBalances(linked.address);
-    }
+    // 2. Bet Button
+    if (betBtn) {
+      const newBtn = betBtn.cloneNode(true);
+      betBtn.parentNode.replaceChild(newBtn, betBtn);
 
-    // --- BETTING HANDLER ---
-    betBtn?.addEventListener('click', async () => {
-      if (betBtn.disabled || betBtn.classList.contains('busy')) return;
-
-      try {
-        // Lock UI
-        betBtn.classList.add('busy');
-        betBtn.textContent = 'Unlocking...';
+      if (state.linked) {
+        newBtn.textContent = 'Place 100 KIBL Bet';
+        newBtn.disabled = false;
+        newBtn.onclick = doBet; 
         
-        const passphrase = await getSigner();
-        if (!passphrase) throw new Error('Cancelled');
+        if (depositBtn) {
+            depositBtn.style.display = 'inline-flex';
+            depositBtn.onclick = () => {
+                navigator.clipboard.writeText(state.linked.address);
+                alert("Address copied: " + state.linked.address);
+            }
+        }
+        
+        if (window.loadWalletBalances) window.loadWalletBalances(state.linked.address);
 
-        // Send Bet
-        betBtn.textContent = 'Signing...';
-        const { txId } = await placeBet({
+      } else if (state.localWallet) {
+        newBtn.textContent = 'Unlock to Play';
+        newBtn.disabled = false;
+        newBtn.onclick = doUnlock;
+      } else {
+        newBtn.textContent = 'Connect Wallet to Play';
+        newBtn.disabled = false;
+        newBtn.onclick = () => window.location.href = '/connect.html';
+      }
+    }
+  }
+
+  // --- 5. HEAVY ACTIONS (Lazy Load) ---
+
+  async function doUnlock() {
+    const btn = document.getElementById('navConnect');
+    if (btn) btn.textContent = 'Loading...';
+
+    try {
+      const { loadWallet } = await import("/assets/walletBet.bundle.js?v=4");
+      const { getSigner } = await import("/assets/wallet-modal.js?v=Christmasv22cachedupdate");
+
+      const pass = await getSigner();
+      if (!pass) {
+          if(btn) btn.textContent = '🔓 Unlock Wallet';
+          return;
+      }
+
+      if(btn) btn.textContent = 'Decrypting...';
+      const session = await loadWallet(pass);
+      
+      if(btn) btn.textContent = 'Linking...';
+      await apiCall('/api/wallet/link', { address: session.address, network: 'mainnet' });
+
+      alert("Wallet Reconnected!");
+      window.location.reload();
+
+    } catch (e) {
+      alert("Unlock Error: " + e.message);
+      if(btn) btn.textContent = '🔓 Unlock Wallet';
+    }
+  }
+
+  async function doBet() {
+    const btn = document.getElementById('betBtn');
+    if (!btn) return;
+
+    try {
+      btn.disabled = true;
+      btn.classList.add('busy');
+      btn.textContent = 'Loading Wallet...';
+
+      const { placeBet } = await import("/assets/walletBet.bundle.js?v=4");
+      const { getSigner } = await import("/assets/wallet-modal.js?v=Christmasv22cachedupdate");
+
+      btn.textContent = 'Authorizing...';
+      const passphrase = await getSigner();
+      if (!passphrase) throw new Error("Cancelled");
+
+      btn.textContent = 'Signing...';
+      const { txId } = await placeBet({
           passphrase,
-          kiblAmount: 10000, // 100 KIBL
+          kiblAmount: 10000, 
           tokenIdHex: window.KIBL_TOKEN_ID_HEX,
           feeNexa: 600
-        });
+      });
 
-        if (window.toast) toast(`Bet sent!`, { type: 'win' });
-        
-        // CRITICAL: Hide button immediately so game UI takes over
-        betBtn.style.display = 'none'; 
-        betBtn.textContent = 'Dealing...'; 
+      if (window.toast) toast(`Bet sent!`, { type: 'win' });
+      
+      // Hand over to game logic
+      btn.style.display = 'none';
+      
+      // Blackjack specific start function
+      if (window.startRound) await window.startRound();
+      
+      if (window.loadProfile) window.loadProfile();
+      if (state.linked) window.loadWalletBalances?.(state.linked.address);
 
-        await window.startRound(); 
-        
-        // Refresh wallet
-        loadProfile();
-        if (linked?.address) loadWalletBalances(linked.address);
-
-      } catch (e) {
-        const msg = e ? (e.message || String(e)) : 'Unknown error';
-        if (msg !== 'Cancelled' && !msg.includes('User rejected')) {
-           if(window.toast) window.toast(`Bet failed: ${msg}`, { type: 'error' });
-           else alert(msg);
-        }
-        // Restore button on error
-        betBtn.style.display = 'inline-flex';
-        betBtn.textContent = 'Place 100 KIBL Bet';
-        betBtn.disabled = false;
-        betBtn.classList.remove('busy');
+    } catch (e) {
+      const msg = e.message || String(e);
+      if (msg !== 'Cancelled' && !msg.includes('User rejected')) {
+         alert("Bet Error: " + msg);
       }
-    });
+      btn.style.display = 'inline-flex';
+      btn.textContent = 'Place 100 KIBL Bet';
+      btn.disabled = false;
+    } finally {
+      btn.classList.remove('busy');
+    }
+  }
 
-    // --- THE POKER-STYLE OBSERVER ---
-    // This watches the status text. When it sees "Round settled" or a Win/Loss, 
-    // it brings the button back.
+  // --- 6. BLACKJACK OBSERVER ---
+  function setupObserver() {
+    const statusMsg = document.getElementById('bjStatus');
+    if (!statusMsg) return;
+
     const obs = new MutationObserver(() => {
         const text = statusMsg.textContent || "";
-        // Check for ANY Game Over keywords
+        // Check for Game Over keywords
         if (text.includes('settled') || text.includes('Win') || text.includes('Loss') || text.includes('Blackjack') || text.includes('Push')) {
             
-            // Small delay to let the user see the result
+            // Delay to let user see result
             setTimeout(() => {
-                if (betBtn.style.display === 'none') {
+                const betBtn = document.getElementById('betBtn');
+                if (betBtn && betBtn.style.display === 'none') {
                     betBtn.style.display = 'inline-flex';
                     betBtn.disabled = false;
                     betBtn.textContent = 'Place 100 KIBL Bet';
                     betBtn.classList.remove('busy');
                     
-                    // Final balance check
-                    if (linked?.address && window.loadWalletBalances) window.loadWalletBalances(linked.address);
+                    if (state.linked && window.loadWalletBalances) window.loadWalletBalances(state.linked.address);
                 }
             }, 1000);
         }
     });
     
-    if (statusMsg) {
-        obs.observe(statusMsg, { childList: true, subtree: true, characterData: true });
-    }
-  });
+    obs.observe(statusMsg, { childList: true, subtree: true, characterData: true });
+  }
+
+  // --- 7. BOOTSTRAP ---
+  if (document.readyState === 'loading') {
+    addEventListener('DOMContentLoaded', init);
+  } else {
+    init();
+  }
 </script>
 <script type="module">
   import { initOnboarding } from './assets/onboarding.js';

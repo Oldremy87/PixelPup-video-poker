@@ -127,8 +127,27 @@ async function placeBet({ passphrase, kiblAmount, tokenIdHex, feeNexa }) {
   console.log("[Client] Sent:", txId);
   return { txId, house: HOUSE_ADDRESS };
 }
+async function recoverSeed(pass) {
+  const rawB64 = localStorage.getItem(KEY);
+  const ivB64 = localStorage.getItem(IV);
+  if (!rawB64 || !ivB64) throw new Error("No wallet found to back up.");
+  const raw = atob(rawB64);
+  const ivb = atob(ivB64);
+  const iv = new Uint8Array([...ivb].map((c) => c.charCodeAt(0)));
+  const ct = new Uint8Array([...raw].map((c) => c.charCodeAt(0)));
+  const h = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(pass));
+  const key = await crypto.subtle.importKey("raw", h, "AES-GCM", false, ["decrypt"]);
+  try {
+    const pt = await crypto.subtle.decrypt({ name: "AES-GCM", iv }, key, ct);
+    const { seed } = JSON.parse(new TextDecoder().decode(pt));
+    return seed;
+  } catch (e) {
+    throw new Error("Incorrect password.");
+  }
+}
 export {
   loadWallet,
-  placeBet
+  placeBet,
+  recoverSeed
 };
 //# sourceMappingURL=walletBet.bundle.js.map
