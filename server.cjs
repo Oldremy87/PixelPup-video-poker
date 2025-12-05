@@ -106,9 +106,9 @@ app.use(express.static('public', {
       // always fetch a fresh HTML shell
       res.setHeader('Cache-Control', 'no-store');
     } else if (/\.(js|css)$/i.test(filePath)) {
-      // long cache for versioned assets
-      res.setHeader('Cache-Control', isProd ? 'public, max-age=31536000, immutable' : 'no-store');
-    } else if (/\.(png|jpg|jpeg|gif|svg|ico)$/i.test(filePath)) {
+  // Check for updates every time (ETag), but cache if unchanged
+  res.setHeader('Cache-Control', 'public, max-age=0, must-revalidate');
+     } else if (/\.(png|jpg|jpeg|gif|svg|ico)$/i.test(filePath)) {
       res.setHeader('Cache-Control', isProd ? 'public, max-age=86400, immutable' : 'no-store');
     }
   }
