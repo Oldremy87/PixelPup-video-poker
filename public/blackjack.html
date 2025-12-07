@@ -1769,7 +1769,7 @@ async function onClaimPayout() {
     if (btn) btn.textContent = 'Loading...';
 
     try {
-      const { loadWallet } = await import("/assets/walletBet.bundle.js?v=4");
+      const { loadWallet } = await import("/assets/walletBet.bundle.js?t=${Date.now()}");
       const { getSigner } = await import("/assets/wallet-modal.js?v=Christmasv22cachedupdate");
 
       const pass = await getSigner();

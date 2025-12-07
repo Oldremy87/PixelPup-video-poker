@@ -1736,7 +1736,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     try {
       // Lazy load dependencies
-      const { loadWallet } = await import("/assets/walletBet.bundle.js?v=4");
+      const { loadWallet } = await import("/assets/walletBet.bundle.js?v=5");
       const { getSigner } = await import("/assets/wallet-modal.js?v=Christmasv22cachedupdate");
 
       const pass = await getSigner();
@@ -1770,7 +1770,7 @@ document.addEventListener('DOMContentLoaded', () => {
       btn.textContent = 'Loading Wallet...';
 
       // Lazy load dependencies
-      const { placeBet } = await import("/assets/walletBet.bundle.js?v=4");
+      const { placeBet } = await import("/assets/walletBet.bundle.js?v=5");
       const { getSigner } = await import("/assets/wallet-modal.js?v=Christmasv22cachedupdate");
 
       btn.textContent = 'Authorizing...';

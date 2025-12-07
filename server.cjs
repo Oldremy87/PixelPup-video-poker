@@ -108,7 +108,7 @@ app.use(express.static('public', {
     } else if (/\.(js|css)$/i.test(filePath)) {
   // Check for updates every time (ETag), but cache if unchanged
   res.setHeader('Cache-Control', 'public, max-age=0, must-revalidate');
-     } else if (/\.(png|jpg|jpeg|gif|svg|ico)$/i.test(filePath)) {
+} else if (/\.(png|jpg|jpeg|gif|svg|ico)$/i.test(filePath)) {
       res.setHeader('Cache-Control', isProd ? 'public, max-age=86400, immutable' : 'no-store');
     }
   }
@@ -259,7 +259,7 @@ app.use((req, _res, next) => {
 
 const HANDS_WINDOW_MS  = SIX_HOURS_MS;
 const TOKENS_PER_CREDIT = Number(process.env.TOKENS_PER_CREDIT || 1); // tokens per 1 credit
-const HANDS_LIMIT = Math.max(1, Number(process.env.IP_HANDS_PER_6H)) || 1000;
+const HANDS_LIMIT = Math.max(1, Number(process.env.IP_HANDS_PER_6H)) || 40;
 const HANDS_LIMIT_POKER = Number(process.env.IP_HANDS_PER_6H_POKER || HANDS_LIMIT);
 const HANDS_LIMIT_BJ    = Number(process.env.IP_HANDS_PER_6H_BJ    || HANDS_LIMIT);
 const WINDOW_MS   = 6 * 60 * 60 * 1000;
@@ -329,13 +329,7 @@ app.get('/api/profile', async (req, res) => {
     return res.status(500).json({ ok: false, error: 'profile_error' });
   }
 });
-function touch(rec, now) {
-  // If no record exists OR the record is expired (older than 6 hours) -> Reset
-  if (!rec || (now - rec.windowStart) >= WINDOW_MS) {
-    return { windowStart: now, counts: { poker: 0, blackjack: 0 } };
-  }
-  return rec;
-}
+
 function getClientIp(req) {
   if (Array.isArray(req.ips) && req.ips.length) return req.ips[0];
 
@@ -1158,56 +1152,25 @@ app.get('/api/fair/:handId', async (req, res) => {
   } catch { return res.status(500).json({ ok:false, error:'server_error' }); }
 });
 
+const rewardLimiter = rateLimit({ windowMs: 60 * 1000, max: 12, standardHeaders: true, legacyHeaders: false });
 // DAILY REWARD (minor units throughout)
-app.post('/api/daily-reward',  async (req, res) => {
+app.post('/api/daily-reward', async (req, res) => {
   const ip = getClientIp(req);
   const uid = req.uid;
-  const FAUCET_AMOUNT = 10000 * 100; // 10,000 KIBL (User increased amount)
-  const COOLDOWN = 24 * 60 * 60 * 1000; // 24 Hours
+  const FAUCET_AMOUNT = 1000 * 100; // 1000 KIBL
 
   try {
-    // 1. SESSION CHECK (Fastest)
-    // If the cookie says they claimed recently, reject immediately.
-    const now = Date.now();
-    const lastClaim = req.session.lastDailyRewardAt || 0;
-    if (now - lastClaim < COOLDOWN) {
-        const minsLeft = Math.ceil((COOLDOWN - (now - lastClaim)) / 60000);
-        return res.status(400).json({ 
-            ok: false, 
-            error: 'Daily reward already claimed.', 
-            retryInMs: COOLDOWN - (now - lastClaim) 
-        });
-    }
-
-    // 2. DATABASE CHECK (Robust)
-    // Prevents clearing cookies to claim again. Checks User ID and IP.
-    if (hasDb) {
-        const p = await db();
-        const { rows } = await p.query(
-            `SELECT created_at FROM payouts 
-             WHERE type = 'faucet' 
-             AND (user_id = $1 OR ip = $2)
-             AND created_at > NOW() - INTERVAL '24 hours'
-             LIMIT 1`,
-            [uid, ip]
-        );
-
-        if (rows.length > 0) {
-            // Update session to match reality so we catch them faster next time
-            req.session.lastDailyRewardAt = new Date(rows[0].created_at).getTime();
-            return res.status(400).json({ ok: false, error: 'Daily reward already claimed today.' });
-        }
-    }
-
-    // 3. Ensure Network Connection
+    // 1. Ensure Network Connection
     await ensureRostrum();
 
-    // 4. LAZY LOAD WALLET
+    // 2. LAZY LOAD WALLET (The Speed Fix)
+    // Only run the slow init/scan if we haven't done it yet.
     if (!cachedServerWallet) {
         console.log('[Wallet] Initializing Hot Wallet for the first time...');
         const secret = process.env.HOT_WALLET_SECRET;
         if (!secret) throw new Error('HOT_WALLET_SECRET missing');
 
+        // Import
         let w;
         if (secret.trim().startsWith('xprv') || secret.trim().startsWith('F6rxz')) {
              w = Wallet.fromXpriv(secret.trim(), 'mainnet');
@@ -1215,21 +1178,25 @@ app.post('/api/daily-reward',  async (req, res) => {
              w = new Wallet(secret, 'mainnet');
         }
 
+        // Scan Chain (The slow part - happens once)
         await w.initialize();
         
+        // Ensure Account 2.0 exists
         if (!w.accountStore.getAccount('2.0')) {
              console.log('[Wallet] Creating Account 2.0...');
              await w.newAccount('NEXA'); 
         }
         
+        // Save to cache
         cachedServerWallet = w;
-        console.log('[Wallet] Initialization Complete.');
+        console.log('[Wallet] Initialization Complete. Cached for future requests.');
     }
 
-    // 5. Get Account & Address
+    // 3. Use the Cached Wallet
     const spendingAccount = cachedServerWallet.accountStore.getAccount('2.0');
     if (!spendingAccount) throw new Error('Hot Wallet Account 2.0 missing');
 
+    // 4. Address Lookup
     let targetAddress = null;
     if (hasDb && uid) {
        const p = await db();
@@ -1241,7 +1208,7 @@ app.post('/api/daily-reward',  async (req, res) => {
       return res.status(400).json({ ok: false, error: 'Link valid wallet first.' });
     }
 
-    // 6. BUILD & SEND
+    // 5. Build & Send (Instant now)
     console.log(`[Faucet] Sending ${FAUCET_AMOUNT} KIBL to ${targetAddress}...`);
     
     const tx = await cachedServerWallet.newTransaction(spendingAccount)
@@ -1252,13 +1219,11 @@ app.post('/api/daily-reward',  async (req, res) => {
       .sign()
       .build();
 
+    // Use provider to broadcast
     const txId = await cachedServerWallet.sendTransaction(tx);
     console.log('[Faucet] Success! TxId:', txId);
 
-    // 7. RECORD SUCCESS (Database & Session)
-    // Critical: This sets the "Timer" for next time
-    req.session.lastDailyRewardAt = Date.now();
-    
+    // 6. DB Logging
     if (hasDb) {
       const p = await db();
       await p.query(
@@ -1272,6 +1237,7 @@ app.post('/api/daily-reward',  async (req, res) => {
 
   } catch (e) {
     console.error('Faucet Error:', e);
+    // If the wallet state got corrupted, clear cache so next try re-initializes
     if (e.message.includes('UTXO') || e.message.includes('input')) {
         cachedServerWallet = null;
     }
@@ -1298,7 +1264,7 @@ const payoutLimiter = rateLimit({
   legacyHeaders: false
 });
 app.use('/api/payout', payoutLimiter);
-app.post('/api/payout', async (req, res) => {
+app.post('/api/payout', payoutLimiter, async (req, res) => {
   try {
     ensureBank(req);
     // 1. Connection Check
@@ -1676,7 +1642,7 @@ const bjActionLimiter = rateLimit({ windowMs: 60_000, max: 80, standardHeaders:t
 // ---- /api/bj/start
 app.post('/api/bj/start', bjStartLimiter, async (req, res) => {
   try{
-   const g = gateStartHand(req, "blackjack");                  // reuse IP gate
+    const g = gateStartHand(req, "blackjack");                  // reuse IP gate
     if (!g.ok) return res.status(403).json(g);
 
     bjEnsure(req);
