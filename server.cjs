@@ -1153,14 +1153,50 @@ app.get('/api/fair/:handId', async (req, res) => {
 });
 
 const rewardLimiter = rateLimit({ windowMs: 60 * 1000, max: 12, standardHeaders: true, legacyHeaders: false });
+const lastDailyClaim = new Map(); // Key: uid or ip, Value: timestamp
+
 // DAILY REWARD (minor units throughout)
-app.post('/api/daily-reward', async (req, res) => {
+app.post('/api/daily-reward', rewardLimiter, async (req, res) => {
   const ip = getClientIp(req);
   const uid = req.uid;
-  const FAUCET_AMOUNT = 10000 * 100; // 1000 KIBL
+  const FAUCET_AMOUNT = 10000 * 100; // 10000 KIBL (minor units)
+  const COOLDOWN = 24 * 60 * 60 * 1000; // 24 Hours in ms
 
   try {
-    // 1. Ensure Network Connection
+    // 0. COOLDOWN CHECK
+    let lastClaimTime = 0;
+
+    if (hasDb) {
+      // Check DB for any faucet claims in last 24h by this User OR IP
+      const p = await db();
+      const { rows } = await p.query(
+        `SELECT created_at FROM payouts 
+         WHERE type = 'faucet' 
+           AND status = 'success'
+           AND (user_id = $1 OR ip = $2)
+         ORDER BY created_at DESC LIMIT 1`,
+        [uid, ip]
+      );
+      if (rows.length > 0) {
+        lastClaimTime = new Date(rows[0].created_at).getTime();
+      }
+    } else {
+      // Memory Fallback
+      lastClaimTime = Math.max(
+        lastDailyClaim.get(uid) || 0, 
+        lastDailyClaim.get(ip) || 0
+      );
+    }
+
+    const timeSince = Date.now() - lastClaimTime;
+    if (timeSince < COOLDOWN) {
+      const remainingMs = COOLDOWN - timeSince;
+      return res.status(429).json({ 
+        ok: false, 
+        error: 'Daily reward already claimed.',
+        retryInMs: remainingMs 
+      });
+    }
     await ensureRostrum();
 
     // 2. LAZY LOAD WALLET (The Speed Fix)
