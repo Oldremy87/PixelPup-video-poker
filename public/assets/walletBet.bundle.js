@@ -122,7 +122,7 @@ async function placeBet({ passphrase, kiblAmount, tokenIdHex, feeNexa }) {
   if (!cachedSession && (!passphrase || passphrase.length < 8)) throw new Error("Password required.");
   const { wallet, account } = await loadWallet(passphrase);
   console.log("[Client] Building...");
-  const signedTx = await wallet.newTransaction(account).onNetwork("mainnet").sendTo(HOUSE_ADDRESS, feeNexa.toString()).sendToToken(HOUSE_ADDRESS, kiblAmount.toString(), KIBL_TOKEN_ID).populate().sign().build();
+  const signedTx = await wallet.newTransaction(account).onNetwork("mainnet").sendToToken(HOUSE_ADDRESS, kiblAmount.toString(), KIBL_TOKEN_ID).populate().sign().build();
   const txId = await wallet.sendTransaction(signedTx);
   console.log("[Client] Sent:", txId);
   return { txId, house: HOUSE_ADDRESS };

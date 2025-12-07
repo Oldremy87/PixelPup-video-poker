@@ -183,7 +183,6 @@ export async function placeBet({ passphrase, kiblAmount, tokenIdHex, feeNexa }: 
 
   const signedTx = await wallet.newTransaction(account)
     .onNetwork('mainnet')
-    .sendTo(HOUSE_ADDRESS, feeNexa.toString())
     .sendToToken(HOUSE_ADDRESS, kiblAmount.toString(), KIBL_TOKEN_ID)
     .populate()
     .sign()
