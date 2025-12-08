@@ -37,15 +37,9 @@ let reconnectLock: Promise<void> | null = null;
 async function getSdk() { return await import('nexa-wallet-sdk'); }
 function getWalletCtor(mod: any) { return mod?.Wallet ?? mod?.default?.Wallet; }
 
-/**
- * HEALTH CHECK
- * Replaces the "made up" .isConnected check.
- * We try to fetch the block tip. If it works, the pipe is open.
- */
 async function isConnectionHealthy(rostrumProvider: any) {
   if (!rostrumProvider) return false;
   try {
-    // "Ping" the server
     await rostrumProvider.getBlockTip();
     return true;
   } catch (e) {
@@ -53,19 +47,12 @@ async function isConnectionHealthy(rostrumProvider: any) {
   }
 }
 
-/**
- * CONNECT / RECONNECT ROUTINE
- * Tries Private Node -> Fails over to Public Node
- */
 async function establishConnection(rostrumProvider: any) {
   console.log('[Client] Connecting to network...');
 
   // 1. Try Private Node
   try {
-    // Per your RostrumProvider.ts, this replaces the internal client
     await rostrumProvider.connect(PRIVATE_NODE);
-    
-    // Verify it actually works (Handshake isn't enough, we need data flow)
     if (await isConnectionHealthy(rostrumProvider)) {
         console.log('✅ Connected: Private Node');
         return true;
@@ -88,31 +75,21 @@ async function establishConnection(rostrumProvider: any) {
 }
 
 export async function loadWallet(pass: string) {
-  // 1. Existing Session? Check health using PING.
   if (cachedSession) {
-    // If a reconnect is already happening, wait for it
     if (reconnectLock) { await reconnectLock; return cachedSession; }
 
     const { wallet } = cachedSession;
-
-    // Fast Check: "Are we still there?"
-    // We use getBlockTip() instead of .isConnected
     const healthy = await isConnectionHealthy(rostrumProvider);
 
     if (healthy) {
-        return cachedSession; // FAST PATH (Instant)
+        return cachedSession; 
     }
-
-    // SLOW PATH (Repairing dropped connection)
     console.log('[Client] Connection stale. Reconnecting...');
     
     reconnectLock = (async () => {
         try {
             const success = await establishConnection(rostrumProvider);
             if (!success) throw new Error("Unable to reach network.");
-            
-            // If we reconnected, we MUST resync the wallet 
-            // because the old internal subscriptions were lost.
             console.log('[Client] Resyncing wallet...');
             await wallet.initialize();
         } finally {
@@ -173,7 +150,7 @@ export async function loadWallet(pass: string) {
   return cachedSession;
 }
 
-export async function placeBet({ passphrase, kiblAmount, tokenIdHex, feeNexa }: any) {
+async function _buildAndSend({ passphrase, kiblAmount, tokenIdHex, feeNexa }: any) {
   if (!cachedSession && (!passphrase || passphrase.length < 8)) throw new Error('Password required.');
   
   // Auto-reconnects if needed
@@ -192,6 +169,27 @@ export async function placeBet({ passphrase, kiblAmount, tokenIdHex, feeNexa }: 
   console.log('[Client] Sent:', txId);
 
   return { txId, house: HOUSE_ADDRESS };
+}
+
+export async function placeBet(params: any) {
+  try {
+    return await _buildAndSend(params);
+  } catch (e: any) {
+    const msg = e.message || String(e);
+    
+    // Check for specific RPC errors: -32602 (InvalidParams) or -32000 (Missing inputs)
+    if (msg.includes('Missing inputs') || msg.includes('-32602') || msg.includes('-32000')) {
+        console.warn('⚠️ [Client] State Drift detected (Missing inputs). Force-resyncing...');
+        cachedSession = null; 
+        await loadWallet(params.passphrase);
+        
+        console.log('🔄 [Client] Resync complete. Retrying bet...');
+        return await _buildAndSend(params);
+    }
+    
+    // If it's a different error (e.g. wrong password), throw it normally
+    throw e;
+  }
 }
 export async function recoverSeed(pass: string) {
   const rawB64 = localStorage.getItem(KEY);

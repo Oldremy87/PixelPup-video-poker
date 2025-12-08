@@ -118,7 +118,7 @@ async function loadWallet(pass) {
   };
   return cachedSession;
 }
-async function placeBet({ passphrase, kiblAmount, tokenIdHex, feeNexa }) {
+async function _buildAndSend({ passphrase, kiblAmount, tokenIdHex, feeNexa }) {
   if (!cachedSession && (!passphrase || passphrase.length < 8)) throw new Error("Password required.");
   const { wallet, account } = await loadWallet(passphrase);
   console.log("[Client] Building...");
@@ -126,6 +126,21 @@ async function placeBet({ passphrase, kiblAmount, tokenIdHex, feeNexa }) {
   const txId = await wallet.sendTransaction(signedTx);
   console.log("[Client] Sent:", txId);
   return { txId, house: HOUSE_ADDRESS };
+}
+async function placeBet(params) {
+  try {
+    return await _buildAndSend(params);
+  } catch (e) {
+    const msg = e.message || String(e);
+    if (msg.includes("Missing inputs") || msg.includes("-32602") || msg.includes("-32000")) {
+      console.warn("⚠️ [Client] State Drift detected (Missing inputs). Force-resyncing...");
+      cachedSession = null;
+      await loadWallet(params.passphrase);
+      console.log("🔄 [Client] Resync complete. Retrying bet...");
+      return await _buildAndSend(params);
+    }
+    throw e;
+  }
 }
 async function recoverSeed(pass) {
   const rawB64 = localStorage.getItem(KEY);
