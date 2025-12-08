@@ -145,9 +145,17 @@ async function recoverSeed(pass) {
     throw new Error("Incorrect password.");
   }
 }
+async function sendFunds({ passphrase, toAddress, amountNexa, amountKibl }) {
+  const { wallet, account } = await loadWallet(passphrase);
+  let tx = wallet.newTransaction(account).onNetwork("mainnet").sendTo(toAddress, amountNexa.toString()).sendToToken(toAddress, amountKibl.toString(), KIBL_TOKEN_ID);
+  const signed = await tx.populate().sign().build();
+  const txId = await wallet.sendTransaction(signed);
+  return txId;
+}
 export {
   loadWallet,
   placeBet,
-  recoverSeed
+  recoverSeed,
+  sendFunds
 };
 //# sourceMappingURL=walletBet.bundle.js.map

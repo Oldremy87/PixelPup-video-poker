@@ -835,6 +835,44 @@ body.compact {
       <button id="depositBtn" class="btn btn-ghost" style="display:none; font-size:10px; margin-top: 5px; width:100%;">
         ⬇️ Show Deposit Address
       </button>
+      <button id="openSendBtn" class="btn btn-ghost" style="width:100%; margin-top:5px;">💸 Send Funds</button>
+
+      <div id="sendModal" class="smart-modal" hidden>
+        <div class="smart-modal-card">
+          <div class="smart-modal-header">
+            <h2>Send Funds</h2>
+            <button class="smart-modal-close">×</button>
+          </div>
+          
+          <div class="smart-modal-body">
+            <div class="field">
+              <label>Recipient Address</label>
+              <input type="text" id="sendAddr" list="addrHistory" placeholder="nexa:nqtsq..." autocomplete="off" />
+              <datalist id="addrHistory"></datalist>
+            </div>
+
+            <div class="field" style="margin-top:10px;">
+              <label>Amount KIBL <span style="font-size:10px; opacity:0.6;">(2 decimals)</span></label>
+              <input type="number" id="sendKibl" step="0.01" min="0.01" placeholder="0.00" />
+              <p class="readout" style="font-size:10px; margin:2px 0 0;">
+                  Min: 0.01 KIBL
+              </p>
+            </div>
+
+            <div class="field" style="margin-top:10px;">
+              <label>Amount NEXA <span style="font-size:10px; opacity:0.6;">(2 decimals)</span></label>
+              <input type="number" id="sendNexa" step="0.01" min="6.00" placeholder="0.00" />
+              <p class="readout" style="font-size:10px; margin:2px 0 0;">
+                  Min: 6.00 NEXA (Dust limit)
+              </p>
+            </div>
+          </div>
+
+          <div class="smart-modal-footer">
+            <button class="btn btn-primary" id="confirmSend">Confirm Send</button>
+          </div>
+        </div>
+      </div>
     
 
       <div id="bj-panels" aria-live="polite" style="margin-top:5px;">
@@ -1633,7 +1671,128 @@ async function onClaimPayout() {
     const r = await fetch(url, opts);
     return r.json();
   }
+// --- SEND FUNDS LOGIC ---
+  function setupSendListeners() {
+    const openBtn = document.getElementById('openSendBtn');
+    const confirmBtn = document.getElementById('confirmSend');
+    const modal = document.getElementById('sendModal');
+    const closeBtn = modal?.querySelector('.smart-modal-close');
+    
+    // Inputs
+    const addrInput = document.getElementById('sendAddr');
+    const kiblInput = document.getElementById('sendKibl');
+    const nexaInput = document.getElementById('sendNexa');
 
+    // 1. Address History Logic
+    const loadHistory = () => {
+        try {
+            const list = JSON.parse(localStorage.getItem('kk_sent_addrs') || '[]');
+            const dl = document.getElementById('addrHistory');
+            if(dl) {
+                dl.innerHTML = list.map(a => `<option value="${a}">`).join('');
+            }
+        } catch(e) {}
+    };
+
+    const saveToHistory = (addr) => {
+        try {
+            let list = JSON.parse(localStorage.getItem('kk_sent_addrs') || '[]');
+            // Remove if exists, add to top
+            list = list.filter(a => a !== addr);
+            list.unshift(addr);
+            // Keep max 5 recent addresses
+            if (list.length > 5) list.length = 5;
+            localStorage.setItem('kk_sent_addrs', JSON.stringify(list));
+            loadHistory();
+        } catch(e) {}
+    };
+
+    // 2. Modal Controls
+    const openModal = () => {
+        if (!modal) return;
+        
+        // CLEAR FIELDS on open
+        if(addrInput) addrInput.value = '';
+        if(kiblInput) kiblInput.value = '';
+        if(nexaInput) nexaInput.value = '';
+
+        loadHistory(); // Refresh autocomplete list
+        
+        modal.hidden = false;
+        requestAnimationFrame(() => modal.classList.add('active'));
+        if(addrInput) addrInput.focus();
+    };
+
+    const closeModal = () => {
+        if (!modal) return;
+        modal.classList.remove('active');
+        setTimeout(() => { modal.hidden = true; }, 200);
+    };
+
+    if (openBtn) openBtn.onclick = (e) => { e.preventDefault(); openModal(); };
+    if (closeBtn) closeBtn.onclick = (e) => { e.preventDefault(); closeModal(); };
+
+    // 3. Send Transaction Logic
+    if (confirmBtn) {
+        confirmBtn.onclick = async (e) => {
+            e.preventDefault();
+            
+            const addr = addrInput.value.trim();
+            const kiblVal = parseFloat(kiblInput.value || "0");
+            const nexaVal = parseFloat(nexaInput.value || "0");
+            const btn = e.target;
+
+            // --- VALIDATION ---
+            if (!addr.startsWith('nexa:')) return alert('Invalid Nexa Address');
+            
+            // Check Dust Limits (Only if amount > 0)
+            if (kiblVal > 0 && kiblVal < 0.01) return alert("Minimum KIBL amount is 0.01");
+            if (nexaVal > 0 && nexaVal < 6.00) return alert("Minimum NEXA amount is 6.00 (Dust Limit)");
+            if (kiblVal === 0 && nexaVal === 0) return alert("Please enter an amount to send.");
+
+            // --- CONVERSION (Decimals -> Satoshis) ---
+            const amountKiblSats = Math.round(kiblVal * 100);
+            const amountNexaSats = Math.round(nexaVal * 100);
+
+            try {
+                btn.textContent = 'Sending...';
+                btn.disabled = true;
+
+                // Load Deps
+                const { getSigner } = await import("/assets/wallet-modal.js?v=Christmasv22cachedupdate");
+                const { sendFunds } = await import("/assets/walletBet.bundle.js?v=" + Date.now()); 
+
+                const passphrase = await getSigner();
+                if (!passphrase) throw new Error('Cancelled');
+
+                const txId = await sendFunds({
+                    passphrase,
+                    toAddress: addr,
+                    amountKibl: amountKiblSats, 
+                    amountNexa: amountNexaSats
+                });
+
+                alert('Sent! TxId: ' + txId);
+                
+                // Success actions
+                saveToHistory(addr); 
+                closeModal();       
+                
+                // Refresh Balance
+                if (typeof window.loadWalletBalances === 'function' && state.linked) {
+                    window.loadWalletBalances(state.linked.address);
+                }
+
+            } catch (e) {
+                console.error(e);
+                alert('Send Failed: ' + (e.message || e));
+            } finally {
+                btn.textContent = 'Confirm Send';
+                btn.disabled = false;
+            }
+        };
+    }
+  }
   // --- 4. INIT ---
   async function init() {
     console.log("Booting BJ UI...");
@@ -1703,6 +1862,7 @@ async function onClaimPayout() {
     
     // E. Setup Result Observer (Unique to Blackjack)
     setupObserver();
+    setupSendListeners();
   }
 
   function updateUI() {
