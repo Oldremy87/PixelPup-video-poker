@@ -46,24 +46,10 @@ async function isConnectionHealthy(rostrumProvider: any) {
     return false;
   }
 }
-async function nukeIndexedDB() {
-  if (!window.indexedDB) return;
-  try {
-    const dbs = await window.indexedDB.databases();
-    for (const db of dbs) {
-      if (db.name) {
-        console.log(`[Client] Clearing stale DB: ${db.name}`);
-        window.indexedDB.deleteDatabase(db.name);
-      }
-    }
-  } catch (e) {
-    console.warn('[Client] Failed to clear IndexedDB:', e);
-  }
-}
 
 async function establishConnection(rostrumProvider: any) {
   console.log('[Client] Connecting to network...');
-
+/*
   // 1. Try Private Node
   try {
     await rostrumProvider.connect(PRIVATE_NODE);
@@ -74,7 +60,7 @@ async function establishConnection(rostrumProvider: any) {
   } catch (e) {
     console.warn('⚠️ Private node unreachable, trying public...');
   }
-
+*/
   // 2. Try Public Node (Failover)
   try {
     await rostrumProvider.connect(PUBLIC_NODE);
@@ -135,7 +121,6 @@ export async function loadWallet(pass: string) {
   const WalletCtor = getWalletCtor(sdk);
   
   const wallet = new WalletCtor(seed, net);
-  const provider = wallet.rostrumProvider || wallet.provider;
   
   // Initial Connect
   const connected = await establishConnection(rostrumProvider);
@@ -194,7 +179,6 @@ export async function placeBet(params: any) {
     if (msg.includes('Missing inputs') || msg.includes('-32602') || msg.includes('-32000')) {
         console.warn('⚠️ [Client] State Drift detected (Missing inputs). Force-resyncing...');
         cachedSession = null; 
-        await nukeIndexedDB();
         await loadWallet(params.passphrase);
         
         console.log('🔄 [Client] Resync complete. Retrying bet...');

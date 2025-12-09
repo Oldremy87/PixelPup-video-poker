@@ -24,10 +24,9 @@ process.on('uncaughtException', (err) => {
 });
 const PORT = process.env.PORT || 10000;
 async function ensureRostrum() {
-  // 1. Try Private Node (Fastest)
+  // 1. Try Private Node (Fastest) 
+ /*
   try {
-    if (rostrumProvider.isConnected) return;
-    
     console.log('[Rostrum] Connecting to Private Infrastructure...');
     await rostrumProvider.connect({ 
       scheme: 'wss', 
@@ -37,7 +36,7 @@ async function ensureRostrum() {
     console.log('✅ [Rostrum] Connected to Private Node (NVMe Accelerated)');
   } catch (e) {
     console.warn('⚠️ [Rostrum] Private node unreachable, attempting failover:', e.message);
-    // 2. Failover to Public Node
+*/
     try {
       await rostrumProvider.connect({ 
         scheme: 'wss', 
@@ -49,7 +48,7 @@ async function ensureRostrum() {
       console.error('❌ [Rostrum] CRITICAL: All nodes failed:', err.message);
     }
   }
-}
+
 
 
 (async () => {
