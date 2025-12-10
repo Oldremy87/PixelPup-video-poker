@@ -49,7 +49,7 @@ async function isConnectionHealthy(rostrumProvider: any) {
 
 async function establishConnection(rostrumProvider: any) {
   console.log('[Client] Connecting to network...');
-/*
+
   // 1. Try Private Node
   try {
     await rostrumProvider.connect(PRIVATE_NODE);
@@ -60,7 +60,7 @@ async function establishConnection(rostrumProvider: any) {
   } catch (e) {
     console.warn('⚠️ Private node unreachable, trying public...');
   }
-*/
+
   // 2. Try Public Node (Failover)
   try {
     await rostrumProvider.connect(PUBLIC_NODE);
@@ -151,7 +151,6 @@ export async function loadWallet(pass: string) {
 async function _buildAndSend({ passphrase, kiblAmount, tokenIdHex, feeNexa }: any) {
   if (!cachedSession && (!passphrase || passphrase.length < 8)) throw new Error('Password required.');
   
-  // Auto-reconnects if needed
   const { wallet, account } = await loadWallet(passphrase);
   
   console.log('[Client] Building...');
@@ -162,6 +161,10 @@ async function _buildAndSend({ passphrase, kiblAmount, tokenIdHex, feeNexa }: an
     .populate()
     .sign()
     .build();
+    console.log('---------------------------------------------------');
+  console.log('[Client] 🔍 DEBUG: Signed Transaction Hex:');
+  console.log(signedTx); // <--- Copy this string to inspect inputs
+  console.log('---------------------------------------------------');
   
   const txId = await wallet.sendTransaction(signedTx);
   console.log('[Client] Sent:', txId);
