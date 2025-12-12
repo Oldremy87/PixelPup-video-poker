@@ -3,252 +3,201 @@
 <head>
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>FAQ — KennelKlub Arcade (Season 0 Mid-Alpha)</title>
+  <title>Docs & FAQ — KennelKlub Arcade (Christmas Beta)</title>
   <style>
-    :root{--bg:#0b0f19;--panel:#111827;--text:#00ffc6;--text-dim:#7fffe6;--accent:#ffcc00;--accent-2:#ff3df7;--accent-3:#6ae3ff;--card-bg:#222638;--card-border:#3af5d9}
+    :root{
+      --bg:#0b0f19; --panel:#111827; --text:#00ffc6; --text-dim:#7fffe6;
+      --accent:#ffcc00; --accent-2:#ff3df7; --accent-3:#6ae3ff;
+      --card-bg:#1f2937; --card-border:#3af5d9; --danger:#ff5577; --ok:#45ff99;
+      --pp-bg:#050015; --pp-card:#120826; --pp-accent1:#00ffc6; --pp-accent2:#ff3df7; --pp-text:#fdfdfd; --pp-muted:#9ca3af;
+    }
     *{box-sizing:border-box} html,body{height:100%}
-    body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;background:
-      radial-gradient(1200px 800px at 50% -20%, #13203b 0%, #0b0f19 60%, #05070d 100%),
-      linear-gradient(180deg, #0b0f19 0%, #05070d 100%);color:var(--text);padding:24px}
+    body{
+      margin:0; font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;
+      background:
+        radial-gradient(1200px 800px at 50% -20%, #13203b 0%, #0b0f19 60%, #05070d 100%),
+        linear-gradient(180deg, #0b0f19 0%, #05070d 100%);
+      color:var(--text); padding:24px;
+    }
     a{color:var(--accent-3); text-decoration:none}
-    header{display:flex;align-items:center;justify-content:space-between;gap:16px;margin:0 auto 16px;max-width:1100px}
+    .wrap{max-width:1100px;margin:0 auto}
+    header{display:flex;align-items:center;justify-content:space-between;gap:16px;margin:0 auto 16px;max-width:1100px;flex-wrap:wrap}
     nav{display:flex;gap:10px;flex-wrap:wrap}
     .brand{display:flex;align-items:center;gap:10px;letter-spacing:.5px;text-shadow:0 0 10px rgba(0,255,198,.6)}
     .brand-badge{width:36px;height:36px;border-radius:10px;border:2px solid var(--card-border);
-      box-shadow:0 0 14px rgba(0,255,198,.2);display:grid;place-items:center;background:linear-gradient(180deg,rgba(255,255,255,.06),rgba(255,255,255,.02));font-weight:700;color:var(--accent)}
+      box-shadow:0 0 14px rgba(0,255,198,.2);display:grid;place-items:center;
+      background:linear-gradient(180deg,rgba(255,255,255,.06),rgba(255,255,255,.02));font-weight:700;color:var(--accent)}
     .btn{appearance:none;border:0;cursor:pointer;padding:10px 14px;border-radius:12px;color:#000;background:var(--accent);
-      box-shadow:0 3px 0 #b59000,0 0 12px rgba(255,204,0,.35);font-weight:700;letter-spacing:.2px;display:inline-flex;align-items:center;gap:8px;font-size:12px}
+      box-shadow:0 3px 0 #b59000,0 0 12px rgba(255,204,0,.35);font-weight:700;letter-spacing:.2px;
+      display:inline-flex;align-items:center;gap:8px;font-size:12px}
+    .btn-primary{background:var(--accent-2);color:#120016;box-shadow:0 3px 0 #a2259c,0 0 14px rgba(255,61,247,.35)}
     .btn-ghost{background:linear-gradient(180deg,rgba(255,255,255,.06),rgba(255,255,255,.02));color:var(--text);
       border:1px solid rgba(58,245,217,.35);box-shadow:0 0 12px rgba(0,255,198,.18) inset,0 0 12px rgba(0,255,198,.12)}
-    .wrap{max-width:1100px;margin:0 auto}
-    .panel{background:linear-gradient(180deg,rgba(255,255,255,.04),rgba(255,255,255,.01));border:1px solid rgba(58,245,217,.3);border-radius:16px;padding:16px}
-    .faq{display:grid;gap:12px}
-    .q{font-weight:700}
-    .a{color:var(--text-dim); font-size:14px}
+    .panel{background:linear-gradient(180deg,rgba(255,255,255,.04),rgba(255,255,255,.01));
+      border:1px solid rgba(58,245,217,.3);border-radius:16px;padding:16px;backdrop-filter:blur(4px);
+      box-shadow:0 0 24px rgba(0,255,198,.06) inset,0 0 24px rgba(0,255,198,.08)}
+    .section{margin-top:12px}
+    .grid{display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));margin-top:8px}
+    .readout{color:var(--text-dim);font-size:12px;line-height:1.45}
+    .notice{border-color:rgba(255,204,0,.35);box-shadow:0 0 24px rgba(255,204,0,.08) inset,0 0 24px rgba(0,255,198,.06)}
+    .pill{display:inline-block;padding:2px 8px;border-radius:999px;font-size:12px;border:1px solid rgba(255,255,255,.18)}
+    .pill-ok{background:rgba(69,255,153,.12);border-color:rgba(69,255,153,.35);color:#b9ffd7}
+    .pill-warn{background:rgba(255,204,0,.10);border-color:rgba(255,204,0,.35);color:#ffe79a}
+    .pill-note{background:rgba(106,227,255,.10);border-color:rgba(106,227,255,.35);color:#c9f3ff}
+    code{background:rgba(0,0,0,.25);padding:2px 6px;border-radius:8px}
+    ul{margin:8px 0 0 18px}
     footer{opacity:.9;color:var(--text-dim);font-size:12px;text-align:center;padding:14px 0 6px;margin-top:24px}
-     .panel{
-      background:linear-gradient(180deg,rgba(255,255,255,.04),rgba(255,255,255,.01));
-      border:1px solid rgba(58,245,217,.3); border-radius:16px; padding:16px; backdrop-filter:blur(4px);
-      box-shadow:0 0 24px rgba(0,255,198,.06) inset, 0 0 24px rgba(0,255,198,.08)
-    }
-    .grid{display:grid; gap:12px; grid-template-columns: repeat(auto-fit, minmax(260px,1fr)); margin-top:12px}
-    .section{margin:12px 0}
-    .readout{color:var(--text-dim); font-size:14px; line-height:1.6}
-    h1,h2,h3{margin:0 0 6px}
-    .small{font-size:12px; opacity:.9}
-    .notice{margin:12px 0 16px; padding:10px 12px; border:1px solid rgba(58,245,217,.35); border-radius:12px; background:rgba(0,255,198,.06)}
-    .q{font-weight:700; margin-bottom:4px}
-    .qa{margin:10px 0 12px}
-    footer{opacity:.9; color:var(--text-dim); font-size:12px; text-align:center; padding:14px 0 6px; margin-top:24px}
-    .dl{margin:8px 0 0 18px}
-    .dl li{margin:.25rem 0}
-    .hr{height:1px; background:rgba(58,245,217,.25); border:0; margin:12px 0}
-    .kbd{padding:0 6px; border:1px solid rgba(58,245,217,.35); border-radius:6px; font-size:12px}
-    .pill{display:inline-block; padding:2px 8px; border-radius:999px; border:1px solid rgba(58,245,217,.35); font-size:12px; color:var(--text-dim)}
   </style>
 </head>
 <body>
-     <header class="wrap">
+  <header class="wrap">
     <nav>
       <a class="btn btn-ghost" href="index.html">Home</a>
-      <a class="btn btn-ghost" href="play.html">Play Poker</a>
-      <a class="btn btn-ghost" href="blackjack.html">Play Blackjack</a>
+      <a class="btn btn-ghost" href="play.html">Poker (Beta)</a>
+      <a class="btn btn-ghost" href="blackjack.html">Blackjack (Beta)</a>
+      <a class="btn btn-ghost" href="dice.html">Dice (Alpha)</a>
+      <a class="btn btn-ghost" href="claim.html">Claim / Daily</a>
       <a class="btn btn-ghost" href="roadmap.html">Roadmap</a>
-      <a class="btn btn-ghost" href="whitepaper.html">Whitepaper</a>
-
+      <a class="btn btn-ghost" href="whitepaper.html">Litepaper</a>
     </nav>
     <div class="brand">
       <div class="brand-badge">KK</div>
-      <h1>FAQ — KennelKlub Arcade</h1>
+      <h1 style="margin:0;font-size:18px">Docs & FAQ</h1>
     </div>
   </header>
 
   <main class="wrap">
-    <!-- Update banner -->
     <section class="panel notice">
-      <strong>Season 0 Mid-Alpha:</strong>
-      Poker polished · <b>Blackjack (Alpha)</b> added · Achievements & Points live (both games) ·
-      Provably fair (commit + hand ID shown in the UI).
+      <strong>🎄 Christmas Beta Mid‑Season:</strong>
+      Poker + Blackjack are <b>Beta</b> · <b>Dice is Alpha</b> · DApp Wallet (send NEXA/KIBL) ·
+      Instant-feel bets · Provably Fair commit + hand IDs visible in‑game.
     </section>
 
-    <!-- Overview -->
     <section class="panel section">
-      <h2>Overview</h2>
-      <p class="readout">
-        KennelKlub is a fair-play Web3 arcade on Nexa. Season 0 includes <b>PixelPup Poker</b> and
-        <b>PixelPup Blackjack (Alpha)</b>, both with Achievements & Points and a live leaderboard.
-        Every hand is <b>provably fair</b>: we show a locked commit before the deal and a traceable hand ID after.
-        Stay shiny ✨🐶⭐
+      <h2 style="margin:0 0 8px">What is KennelKlub Arcade?</h2>
+      <p class="readout" style="margin:0">
+        KennelKlub is a fast, transparent on‑chain arcade on Nexa. The vibe is playful (PixelPups),
+        but the engineering goal is serious: <b>smooth gameplay</b>, <b>fair outcomes</b>, and
+        <b>clear on‑chain settlement</b> where it matters.
+        <br/><br/>
+        <span class="pill pill-note">Stay shiny ✨🐶⭐</span>
       </p>
     </section>
 
-    <!-- Getting Started -->
     <section class="panel section">
-      <h2>Getting Started</h2>
+      <h2 style="margin:0 0 8px">Quick Start</h2>
       <div class="grid">
         <div>
-          <h3>Play Immediately</h3>
-          <p class="readout">No wallet needed to try the arcade. Just open Poker or Blackjack and start playing. On-chain steps only happen when claiming.</p>
-        </div>
-        <div>
-          <h3>Faucet & Tokens</h3>
-          <p class="readout">A faucet provides $KIBL for Season 0. These tokens are for alpha gameplay and have <b>no monetary value</b>.</p>
-        </div>
-        <div>
-          <h3>Claiming (When Ready)</h3>
-          <p class="readout">Claims are hCaptcha-gated and only occur on the claim step. Until then, you can play wallet-free.</p>
-        </div>
-      </div>
-    </section>
-
-    <!-- Provably Fair -->
-    <section class="panel section">
-      <h2>Provably Fair (Simple)</h2>
-      <p class="readout">
-        Before a hand is dealt, we lock a hidden <b>commit</b>. After you play, we show a <b>hand ID</b>.
-        Matching these proves the deal wasn’t changed—no hidden house edge.
-      </p>
-      <div class="qa">
-        <div class="q">Why it matters</div>
-        <p class="readout">Transparency builds trust: outcomes are verifiable, not just promised.</p>
-      </div>
-      <hr class="hr"/>
-      <h3>Provably Fair (Technical)</h3>
-      <ul class="readout dl">
-        <li><b>Commit:</b> server-side cryptographic hash of the outcome, locked before deal</li>
-        <li><b>Reveal:</b> post-hand data with <b>hand ID</b> displayed in the UI</li>
-        <li><b>Verification:</b> public verify page planned; for now, commit + hand ID are visible so results are traceable</li>
-      </ul>
-    </section>
-
-    <!-- Games -->
-    <section class="panel section">
-      <h2>Games in Season 0</h2>
-      <div class="grid">
-        <div>
-          <h3>PixelPup Poker</h3>
-          <p class="readout">
-            Classic video-poker loop with a transparent paytable. Achievements & Points live.
-            Scoring is server-side to prevent exploits; anti-abuse limits apply.
+          <h3 style="margin:0 0 6px">1) Create / Import Wallet</h3>
+          <p class="readout" style="margin:0">
+            Use the in‑app wallet to <b>create</b> or <b>import</b> a seed.
+            Link your address so payouts and daily rewards go to the right place.
           </p>
         </div>
         <div>
-          <h3>PixelPup Blackjack <span class="pill">Alpha</span></h3>
-          <p class="readout">
-            Core logic is live in alpha with Achievements & Points. Expect rapid iteration on polish and UI.
+          <h3 style="margin:0 0 6px">2) Bet → Play</h3>
+          <p class="readout" style="margin:0">
+            Each game has a simple loop: <b>Bet 100 KIBL</b> → play the hand/roll → see results.
+            Your session balance updates in the UI; on‑chain payouts are handled via <a href="claim.html">Claim / Daily</a>.
+          </p>
+        </div>
+        <div>
+          <h3 style="margin:0 0 6px">3) Claim / Daily Rewards</h3>
+          <p class="readout" style="margin:0">
+            Claims are gated with hCaptcha to reduce abuse.
+            When approved, the app sends rewards to your <b>linked wallet address</b>.
           </p>
         </div>
       </div>
     </section>
 
-    <!-- Achievements & Points -->
     <section class="panel section">
-      <h2>Achievements & Points</h2>
-      <p class="readout">
-        Both Poker and Blackjack have Achievements & Points. Better hands convert into more points for the
-        <b>Season 0 leaderboard</b>. We’ll expand tiers over time. Have ideas? Drop them in Telegram!
+      <h2 style="margin:0 0 8px">Provably Fair (what you can verify today)</h2>
+      <p class="readout" style="margin:0">
+        Every round uses a <b>commit → reveal</b> style flow. Before the hand, you’ll see a
+        <code>commit</code> value. After settlement, you’ll see a <code>handId</code> and the revealed seed material.
+        The full “verify” page is still being refined, but the important parts are already visible:
+        the <b>commit</b> and the <b>traceable hand/round ID</b>.
       </p>
-    </section>
-
-    <!-- Leaderboards -->
-    <section class="panel section">
-      <h2>Leaderboards & Motivation</h2>
-      <p class="readout">
-        We highlight Top players publicly while also encouraging progress at every level. A “rank window”
-        (your rank ±3) helps casual and mid-pack players chase nearby spots instead of only the crown.
-      </p>
-    </section>
-
-    <!-- Wallet & Claims -->
-    <section class="panel section">
-      <h2>Wallets & Claims</h2>
-      <ul class="readout dl">
-        <li><b>Play without a wallet:</b> on-chain interaction happens only when claiming</li>
-        <li><b>Claims:</b> hCaptcha-gated and hostname-verified for safety</li>
-        <li><b>Future:</b> early dApp wallet integration while preserving low-friction entry</li>
+      <ul class="readout">
+        <li><span class="pill pill-ok">Visible now</span> commit + hand/round id inside the game UI</li>
+        <li><span class="pill pill-warn">In progress</span> a friendly verify page that walks users through the math</li>
       </ul>
     </section>
 
-    <!-- Tokens / Not Gambling -->
     <section class="panel section">
-      <h2>Is this gambling?</h2>
-      <p class="readout">
-        No. KennelKlub Arcade (Poker + Blackjack) is a <b>free alpha test</b>. No real-money wagering is offered.
-        Faucet tokens are for gameplay only and are <b>not</b> withdrawable for fiat or other assets.
-        You must be <b>18+</b> to participate.
+      <h2 style="margin:0 0 8px">Games Status</h2>
+      <div class="grid">
+        <div class="panel" style="margin:0">
+          <h3 style="margin:0 0 6px">Poker (Beta)</h3>
+          <p class="readout" style="margin:0">
+            Classic video poker loop with seasonal points, achievements, and payouts.
+            Designed for “quick sessions” and skill-weighted play.
+          </p>
+        </div>
+        <div class="panel" style="margin:0">
+          <h3 style="margin:0 0 6px">Blackjack (Beta)</h3>
+          <p class="readout" style="margin:0">
+            Double + split supported. Win feedback is more “arcade” and obvious.
+            Still beta: report weird hands/edge cases.
+          </p>
+        </div>
+        <div class="panel" style="margin:0">
+          <h3 style="margin:0 0 6px">Dice (Alpha)</h3>
+          <p class="readout" style="margin:0">
+            Simple risk tiers, fast loop, provably fair commit/reveal.
+            The goal is a one‑tap rhythm: bet → choose risk → roll → repeat.
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel section">
+      <h2 style="margin:0 0 8px">Season + Rewards</h2>
+      <p class="readout" style="margin:0">
+        The Christmas season runs on a fixed window and uses special face cards (Santa/elf hats).
+        Seasonal formats are still evolving during beta; when resets happen, we’ll post them in Telegram/X
+        with clear dates and reasons.
       </p>
     </section>
 
-    <!-- Compliance & Safety -->
     <section class="panel section">
-      <h2>Compliance & Safety</h2>
-      <ul class="readout dl">
-        <li><b>Entity:</b> Wyoming LLC in progress</li>
-        <li><b>Fairness:</b> commit–reveal surfaced in the UI; server-side evaluation; anti-abuse rate limits</li>
-        <li><b>Security:</b> same-origin checks on POSTs; hCaptcha on payout; hostname verification</li>
+      <h2 style="margin:0 0 8px">Safety & Abuse Controls (high level)</h2>
+      <p class="readout" style="margin:0">
+        This is still beta/alpha, so we prioritize fairness and stability over perfect convenience.
+        Rate limits are applied at the session/user level to reduce scripted farming and protect the prize pool.
+        We intentionally don’t publish exact thresholds or fingerprints.
+      </p>
+    </section>
+
+    <section class="panel section">
+      <h2 style="margin:0 0 8px">What can I do with KIBL?</h2>
+      <p class="readout" style="margin:0">
+        Today: <b>play</b> games (bet 100 KIBL per round), <b>earn</b> rewards, <b>claim</b> to your linked wallet,
+        and <b>send</b> KIBL/NEXA from the in‑app wallet. Over time: seasonal collectibles (face cards),
+        deeper on‑chain integrations, and more arcade games — all aimed at building real usage and network activity.
+      </p>
+      <ul class="readout">
+        <li><b>In-app utility:</b> bets + gameplay + claims + daily rewards</li>
+        <li><b>Player-owned wallet:</b> withdraw/gift, and use KIBL across other dApps</li>
+        <li><b>Seasonal cosmetics:</b> unique face cards per season (planned)</li>
       </ul>
     </section>
 
-    <!-- Privacy & Data -->
     <section class="panel section">
-      <h2>Privacy & Data</h2>
-      <p class="readout">
-        We collect minimal operational telemetry to keep the arcade stable and fair (e.g., rate-limit counters, gameplay events).
-        See <a href="privacy.html">Privacy</a> for details.
+      <h2 style="margin:0 0 8px">Support / Feedback</h2>
+      <p class="readout" style="margin:0">
+        Bugs and edge cases are expected in beta/alpha — the best way to help is to report:
+        the game, timestamp, and the visible <code>handId</code>. Thank you for testing.
       </p>
-    </section>
-
-    <!-- Alpha Tester NFT -->
-    <section class="panel section">
-      <h2>Alpha Tester NFT</h2>
-      <p class="readout">
-        During the snapshot window, 12 addresses held 10,000+ $KIBL and received the <b>Alpha Tester NFT</b> —
-        a permanent proof-of-pawprint in KennelKlub history.
+      <p class="readout" style="margin-top:8px">
+        Telegram: <a href="https://t.me/NexaKennelKlub" target="_blank" rel="noreferrer">t.me/NexaKennelKlub</a>
       </p>
-    </section>
-
-    <!-- Roadmap & Docs -->
-    <section class="panel section">
-      <h2>Roadmap & Whitepaper</h2>
-      <ul class="readout dl">
-        <li><a href="roadmap.html">Roadmap</a> — Season 0 now, next (Q4 2025), later (2026+)</li>
-        <li><a href="whitepaper.html">Whitepaper</a> — fairness-first arcade, seasonal loops, deflationary design</li>
-      </ul>
-    </section>
-
-    <!-- Support -->
-    <section class="panel section">
-      <h2>Report Bugs & Get Help</h2>
-      <p class="readout">
-        Found an issue or have feedback? Ping us on Telegram or open an issue via our support channel.
-        Clear repro steps, screenshots, and your hand ID (if relevant) help us fix things faster.
-      </p>
-    </section>
-
-    <!-- Changelog -->
-    <section class="panel section">
-      <h2>Docs Changelog</h2>
-      <p class="readout small">Updated: Sept 11, 2025 — Mid-Alpha refresh (Poker polish, Blackjack Alpha, Achievements/Points, provably fair UI, Alpha NFT note, roadmap/whitepaper links).</p>
     </section>
   </main>
 
-  
-
-  <footer>
-    © 2025 KIBL / PixelPup • Stay shiny 🐶✨ •
-    <a href="tos.html">Terms</a> • <a href="privacy.html">Privacy</a> • <a href="disclaimer.html">Disclaimer</a>
+  <footer class="wrap">
+    KennelKlub Arcade · playpixelpup.onrender.com · Built in public on Nexa · Stay shiny ✨🐶⭐
   </footer>
-
-  <!-- cookie bar (same snippet) -->
-  <div id="cookieBar" class="cookie-bar" role="region" aria-label="Cookie notice" hidden>
-    <span>We use cookies & session storage as described in our <a href="privacy.html">Privacy Policy</a>.</span>
-    <button id="cookieAccept" class="btn">Accept</button>
-  </div>
-  <script>
-    (function(){const KEY='kk_cookie_consent_v1',b=document.getElementById('cookieBar'),x=document.getElementById('cookieAccept');
-      try{if(localStorage.getItem(KEY)==='true')return;b.hidden=false;x.addEventListener('click',()=>{localStorage.setItem(KEY,'true');b.hidden=true;});}
-      catch{b.hidden=false;x.addEventListener('click',()=>b.hidden=true);}
-    })();
-  </script>
 </body>
 </html>

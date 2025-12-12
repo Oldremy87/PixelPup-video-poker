@@ -24,8 +24,8 @@ process.on('uncaughtException', (err) => {
 });
 const PORT = process.env.PORT || 10000;
 async function ensureRostrum() {
-  // 1. Try Private Node (Fastest) 
- /*
+  // 1. Try Private Node (Fastest)
+/*
   try {
     console.log('[Rostrum] Connecting to Private Infrastructure...');
     await rostrumProvider.connect({ 
@@ -188,7 +188,8 @@ const HCAPTCHA_SECRET   = process.env.HCAPTCHA_SECRET;
 const HCAPTCHA_HOSTNAME = process.env.HCAPTCHA_HOSTNAME || '';   
 const tablesByGame = {
   poker:      { stats: 'user_stats',            points: 'season_points' },
-  blackjack:  { stats: 'user_stats_blackjack',  points: 'season_points_blackjack' }
+  blackjack:  { stats: 'user_stats_blackjack',  points: 'season_points_blackjack' },
+  dice:       { stats: 'user_stats_dice',            points: 'season_points_dice' }
 };
 
 
@@ -266,32 +267,52 @@ const handsByUid = new Map();
 const handsByIp  = new Map(); 
 function touch(rec, now) {
   return (!rec || (now - rec.windowStart) >= WINDOW_MS)
-    ? { windowStart: now, counts: { poker: 0, blackjack: 0 } }
+    ? { windowStart: now, counts: { poker: 0, blackjack: 0, dice: 0 } }
     : rec;
 }
+// REPLACE your existing app.get('/api/profile', ...) block with this:
+
 app.get('/api/profile', async (req, res) => {
   try {
     ensureBank(req);
-
-    // Avoid any caching of this endpoint
     res.set('Cache-Control', 'no-store');
 
-    const [userOk, statsOk] = await Promise.allSettled([
-      getOrCreateUser(req.uid),
-      loadStats(req.uid)
-    ]);
-    const s = statsOk.status === 'fulfilled' ? statsOk.value : null;
-   const displayId = await ensureDisplayId(req.uid);
+    // 1. Ensure User Rows Exist
+    try {
+      await getOrCreateUser(req.uid);
+    } catch (e) {
+      console.error('[Profile] Critical: getOrCreateUser failed:', e.message);
+      throw e;
+    }
+
+    // 2. Load Stats (Initialize variables to null first!)
+    let stats = null;
+    let poker = null;
+    let bj = null;
+    let dice = null; // <--- This was likely missing, causing the crash
+
+    try {
+      stats = await loadStats(req.uid);
+      
+      // Load all game stats in parallel
+      [poker, bj, dice] = await Promise.all([
+        loadStatsFor(req.uid, 'poker'),
+        loadStatsFor(req.uid, 'blackjack'),
+        loadStatsFor(req.uid, 'dice') // This works now that tables exist
+      ]);
+    } catch (e) {
+      console.error('[Profile] Stats loading failed:', e.message);
+    }
+
+    const displayId = await ensureDisplayId(req.uid);
+    
+    // 3. Calculate Balances
     const balPoker = Math.max(0, Number(req.session.wallet?.poker || 0));
     const balBJ    = Math.max(0, Number(req.session.wallet?.blackjack || 0));
     const total    = Math.min(BANK_CAP, balPoker + balBJ);
-      req.session.bank = total; // keep session total canonical
+    req.session.bank = total;
 
-    let poker=null, bj=null;
-    try {
-      await getOrCreateUser(req.uid);
-      [poker, bj] = await Promise.all([loadStatsFor(req.uid,'poker'), loadStatsFor(req.uid,'blackjack')]);
-    } catch {}
+    // 4. Send Response
     return res.json({
       ok: true,
       displayId,
@@ -310,22 +331,26 @@ app.get('/api/profile', async (req, res) => {
           }
         },
         blackjack: {
-  wins: bj?.wins || 0,
-  achievements: {
-    firstWin:  !!bj?.first_win,
-    w10:       !!bj?.w10,
-    w25:       !!bj?.w25,
-    w50:       !!bj?.w50,
-    natural:   !!bj?.bj_natural,
-    doubleWin: !!bj?.bj_double_win,
-    splitWin:  !!bj?.bj_split_win
-  }
-}
-}
-           
+          wins: bj?.wins || 0,
+          achievements: {
+            firstWin:  !!bj?.first_win,
+            natural:   !!bj?.bj_natural,
+            doubleWin: !!bj?.bj_double_win,
+            splitWin:  !!bj?.bj_split_win
+          }
+        },
+        // NEW: Safe access to dice stats
+        dice: {
+          wins: dice?.wins || 0,
+          points: 0 // We'll link season points separately if needed
+        }
+      }
     });
+
   } catch (e) {
-    return res.status(500).json({ ok: false, error: 'profile_error' });
+    // This logs the ACTUAL error to your terminal instead of hiding it
+    console.error('[Profile] CRASH:', e);
+    return res.status(500).json({ ok: false, error: e.message || 'profile_error' });
   }
 });
 
@@ -373,9 +398,50 @@ function shuffleDeterministic(deck, rng) {
   return a;
 }
 // Leaderboard
+app.get('/api/leaderboard/dice', async (req, res) => {
+  try {
+    const p = await db();
+    const limit = 100;
+
+    // pull current season ID
+    const row = await p.query(
+      `SELECT current_season_id FROM season_current LIMIT 1`
+    );
+    const seasonId = row.rows[0]?.current_season_id;
+    if (!seasonId) return res.json({ ok: true, players: [] });
+
+    const q = `
+      SELECT sp.user_id, sp.points_total AS points,
+             u.display_id, u.avatar_url
+      FROM season_points_dice sp
+      JOIN users u ON u.user_id = sp.user_id
+      WHERE sp.season_id = $1
+      ORDER BY sp.points_total DESC
+      LIMIT $2
+    `;
+
+    const r = await p.query(q, [seasonId, limit]);
+
+    return res.json({
+      ok: true,
+      players: r.rows.map((row, i) => ({
+        rank: i + 1,
+        id: row.display_id,
+        avatar: row.avatar_url,
+        points: row.points
+      }))
+    });
+
+  } catch (e) {
+    logger.error("leaderboard/dice", { e });
+    return res.status(500).json({ ok: false });
+  }
+});
+
 app.get('/api/leaderboard/top', async (req, res) => {
   try {
-    const game = (req.query.game === 'blackjack') ? 'blackjack' : 'poker';
+    const qg   = String(req.query.game || 'poker');
+    const game = (qg === 'blackjack' || qg === 'dice') ? qg : 'poker';
     const limit = Math.max(1, Math.min(50, Number(req.query.limit) || 10));
     const table = tablesByGame[game].points;
 
@@ -413,7 +479,8 @@ limit $2
 });
 app.get('/api/leaderboard/window', async (req, res) => {
   try {
-    const game = (req.query.game === 'blackjack') ? 'blackjack' : 'poker';
+    const qg   = String(req.query.game || 'poker');
+    const game = (qg === 'blackjack' || qg === 'dice') ? qg : 'poker';
     const k = Math.max(1, Math.min(10, Number(req.query.k) || 3)); // window radius
     const table = tablesByGame[game].points;
 
@@ -518,6 +585,57 @@ app.use(async (req, _res, next) => {
   try { await getOrCreateUser(req.uid); } catch {}
   next();
 });
+async function mergeStats(sourceUid, targetUid) {
+  if (!hasDb) return;
+  const p = await db();
+
+  await p.query('BEGIN');
+  try {
+    // 1. Merge POKER Stats (user_stats)
+    await p.query(`
+      UPDATE user_stats target
+      SET 
+        wins = target.wins + source.wins,
+        royal_flushes = target.royal_flushes + source.royal_flushes,
+        bank_minor = target.bank_minor + source.bank_minor
+      FROM user_stats source
+      WHERE target.user_id = $1 AND source.user_id = $2
+    `, [targetUid, sourceUid]);
+
+    // 2. Merge BLACKJACK Stats (user_stats_blackjack)
+    await p.query(`
+      UPDATE user_stats_blackjack target
+      SET 
+        wins = target.wins + source.wins,
+        blackjacks = target.blackjacks + source.blackjacks,
+        bank_minor = target.bank_minor + source.bank_minor
+      FROM user_stats_blackjack source
+      WHERE target.user_id = $1 AND source.user_id = $2
+    `, [targetUid, sourceUid]);
+    const sid = await getCurrentSeasonId();
+    if (sid) {
+      await p.query(`INSERT INTO season_points(season_id, user_id, points_total) VALUES($1, $2, 0) ON CONFLICT DO NOTHING`, [sid, targetUid]);
+      
+      await p.query(`
+        UPDATE season_points target
+        SET points_total = target.points_total + source.points_total
+        FROM season_points source
+        WHERE target.season_id = $1 AND target.user_id = $2 
+          AND source.season_id = $1 AND source.user_id = $3
+      `, [sid, targetUid, sourceUid]);
+    }
+    await p.query('DELETE FROM user_stats WHERE user_id = $1', [sourceUid]);
+    await p.query('DELETE FROM user_stats_blackjack WHERE user_id = $1', [sourceUid]);
+    if (sid) await p.query('DELETE FROM season_points WHERE season_id = $1 AND user_id = $2', [sid, sourceUid]);
+
+    await p.query('COMMIT');
+    console.log(`[Merge] Successfully merged stats from ${sourceUid} into ${targetUid}`);
+
+  } catch (e) {
+    await p.query('ROLLBACK');
+    console.error('[Merge] Failed:', e);
+  }
+}
 
 async function loadStatsFor(uid, game) {
   if (!hasDb) return null;
@@ -539,29 +657,55 @@ async function saveStatsFor(uid, game, { creditMinor, isWin, isRoyal, flags }) {
   await p.query(`update ${stats} set ${sets.join(', ')}, last_seen_at = now() where user_id = $1`, vals);
 }
 
+// server.cjs - DEBUG VERSION
 async function awardSeasonPointsFor(uid, game, points) {
-  if (!hasDb || !points) return;
-  const { points: table } = tablesByGame[game];
+  if (!hasDb) return;
+  if (!points) return; 
+
+  const config = tablesByGame[game];
+  if (!config) return console.error(`[Points] Error: No config for game "${game}"`);
+  
+  const { points: table } = config;
   const p = await db();
+  
   const sid = await getCurrentSeasonId();
-  if (!sid) return;
+  if (!sid) return console.error('[Points] Error: No active season');
+
+  // --- DEBUG LOGGING START ---
+  console.log('--- DEBUG: POINT AWARD START ---');
+  console.log(`1. Game: ${game}`);
+  console.log(`2. Table: ${table}`);
+  console.log(`3. SID (should be text): ${sid}`);
+  console.log(`4. UID (should be uuid): ${uid}`);
+  console.log(`5. Points (should be number): ${points}`);
+  
+  // This array MUST be [sid, uid, points]
+  const params = [sid, uid, points]; 
+  console.log('6. Sending Query Params:', params);
+  // --- DEBUG LOGGING END ---
+
   await p.query('begin');
   try {
-    await p.query(`insert into ${table}(season_id,user_id,points_total) values($1,$2,0) on conflict do nothing`, [sid, uid]);
-    await p.query(`update ${table} set points_total=points_total+$3, last_update=now() where season_id=$1 and user_id=$2`, [sid, uid, points]);
+    // 1. Insert
+    await p.query(
+        `insert into ${table}(season_id,user_id,points_total) values($1,$2,0) on conflict do nothing`, 
+        [sid, uid]
+    );
+
+    // 2. Update
+    // $1=sid, $2=uid, $3=points
+    await p.query(
+        `update ${table} set points_total=points_total+$3, last_update=now() where season_id=$1 and user_id=$2`, 
+        params // <--- Using the variable we logged above
+    );
+    
+    console.log(`[Points] Success! Awarded ${points} to ${uid}`);
     await p.query('commit');
   } catch (e) {
     await p.query('rollback');
+    console.error('[Points] SQL Error Detailed:', e.message);
   }
 }
-
-async function loadStats(uid){
-  if (!hasDb) return null;
-  const p = await db();
-  const { rows } = await p.query('select * from user_stats where user_id=$1', [uid]);
-  return rows[0] || null;
-}
-
 async function saveAfterDraw(uid, { creditMinor, isWin, isRoyal, flags }){
   if (!hasDb) return;
   const p = await db();
@@ -629,23 +773,17 @@ function ensureBank(req) {
   if (!req.session.currentHand) req.session.currentHand = null;
 }
 // Wallet functions
-// /api/wallet/balance
 app.get('/api/wallet/balance', async (req, res) => {
   try {
-
     const address = String(req.query.address || '');
     if (!/^nexa:[a-z0-9]+$/i.test(address)) {
       return res.status(400).json({ ok:false, error:'bad_address' });
     }
-
     // Watch-only against the single address, mainnet
     const w = new WatchOnlyWallet({ address }, 'mainnet');
+    const nexaBal     = await w.getBalance();       
+    const tokenBals   = await w.getTokenBalances();   
 
-    // New 0.8.0 helpers – already aggregated; no manual UTXO math
-    const nexaBal     = await w.getBalance();         // { confirmed:"...", unconfirmed:"..." }
-    const tokenBals   = await w.getTokenBalances();   // { [tokenHex]: { confirmed:"...", unconfirmed:"..." }, ... }
-
-    // Pull just KIBL (string → Number → /100). No BigInt anywhere.
     const kiblMinor   = Number(tokenBals[KIBL_GROUP_HEX]?.confirmed || 0);
     const nexaMinor   = Number(nexaBal.confirmed || 0);
 
@@ -665,25 +803,63 @@ app.get('/api/wallet/balance', async (req, res) => {
 });
 
 
-// /api/wallet/link  (server)
 app.post('/api/wallet/link', async (req, res) => {
   try {
     const { address, network } = req.body || {};
+    // Validation matches your existing code 
     if (!address || !/^nexa:/.test(address)) return res.status(400).json({ ok:false, error:'bad_address' });
     const net = (network === 'mainnet') ? 'mainnet' : 'mainnet'; 
+
+    // 1. Ensure the current temporary user exists (standard logic)
     await getOrCreateUser(req.uid);
+
     if (hasDb) {
       const p = await db();
-      await p.query(
-        `update users set wallet_addr=$2, wallet_net=$3, last_seen_at=now() where user_id=$1`,
-        [req.uid, address, net]
+
+      // 2. CHECK: Does this wallet belong to an existing user?
+      const { rows: owners } = await p.query(
+        'SELECT user_id FROM users WHERE wallet_addr = $1', 
+        [address]
       );
+
+      if (owners.length > 0) {
+        // FOUND EXISTING ACCOUNT
+        const masterUid = owners[0].user_id;
+
+        if (masterUid !== req.uid) {
+          console.log(`[Link] Device switching: ${req.uid} -> ${masterUid}`);
+
+           await mergeStats(req.uid, masterUid); // (Requires custom SQL function)
+          res.cookie('uid', masterUid, {
+            httpOnly: true,
+            sameSite: (process.env.CROSS_SITE_COOKIES === 'true') ? 'none' : 'lax',
+            secure: isProd, // defined in your lines [cite: 13]
+            maxAge: 1000 * 60 * 60 * 24 * 365 // 1 year
+          });
+
+          // Update the in-memory request for the rest of this cycle
+          req.uid = masterUid;
+          
+          return res.json({ ok: true, switched: true, note: "Account recovered" });
+        }
+      } else {
+        // NEW LINK: No one owns this address yet. Link it to current UID.
+        await p.query(
+          `UPDATE users SET wallet_addr=$2, wallet_net=$3, last_seen_at=now() WHERE user_id=$1`,
+          [req.uid, address, net]
+        );
+      }
     } else {
-      req.session.linkedWallet = { address, network: net };
-      if (req.session.save) await new Promise((r,j)=>req.session.save(e=>e?j(e):r()));
+        // Fallback for no-DB mode (Keep existing logic)
+        req.session.linkedWallet = { address, network: net };
+        if (req.session.save) await new Promise((r,j)=>req.session.save(e=>e?j(e):r()));
     }
-    res.json({ ok:true });
-  } catch { res.status(500).json({ ok:false, error:'link_error' }); }
+
+    res.json({ ok: true });
+  } catch (e) { 
+    console.error(e);
+    res.status(500).json({ ok:false, error:'link_error' }); 
+  }
 });
 app.get('/api/wallet/status', async (req,res)=>{
   try {
@@ -820,7 +996,11 @@ function gateStartHand(req, game = 'poker') {
   const ip   = getClientIp(req) || 'unknown';
   
 
-  const limit = (game === 'blackjack') ? HANDS_LIMIT_BJ : HANDS_LIMIT_POKER;
+  const limit = (game === 'blackjack')
+    ? HANDS_LIMIT_BJ
+    : (game === 'dice')
+      ? HANDS_LIMIT_POKER  // reuse same cap as poker for now
+      : HANDS_LIMIT_POKER;
 
   const rUid = touch(handsByUid.get(uid), now);
   const rIp  = touch(handsByIp.get(ip), now);
@@ -1159,7 +1339,7 @@ app.post('/api/daily-reward', rewardLimiter, async (req, res) => {
   const ip = getClientIp(req);
   const uid = req.uid;
   const FAUCET_AMOUNT = 10000 * 100; // 10000 KIBL (minor units)
-  const COOLDOWN = 24 * 60 * 60 * 1000; // 24 Hours in ms
+  const COOLDOWN =   24* 60 * 60 * 1000; // 24 Hours in ms
 
   try {
     // 0. COOLDOWN CHECK
@@ -1196,6 +1376,7 @@ app.post('/api/daily-reward', rewardLimiter, async (req, res) => {
         retryInMs: remainingMs 
       });
     }
+    // 1. Ensure Network Connection
     await ensureRostrum();
 
     // 2. LAZY LOAD WALLET (The Speed Fix)
@@ -1302,8 +1483,6 @@ app.use('/api/payout', payoutLimiter);
 app.post('/api/payout', payoutLimiter, async (req, res) => {
   try {
     ensureBank(req);
-    // 1. Connection Check
-    await ensureRostrum();
 
     // 2. LAZY LOAD WALLET (Reliability Fix)
     if (!cachedServerWallet) {
@@ -2175,6 +2354,259 @@ app.post('/api/bj/split', bjActionLimiter, (req, res) => {
     return res.status(500).json({ ok:false, error:'bj_split_error' });
   }
 });
+// =================== SATOSHI DICE HELPERS ===================
+
+// Ode to Satoshi Dice: roll in [0, 9999] from a commit–reveal seed.
+function satoshiDiceRoll(serverSeed, clientSeed, handId, nonce = 0) {
+  const h = sha256hex(`${serverSeed}:${clientSeed || ''}:${handId}:${nonce}:dice`);
+  const n = parseInt(h.slice(0, 8), 16) >>> 0;
+  return n % 10000; // 0–9999
+}
+
+// PixelPup-flavored risk tiers (you can tune thresholds/payouts):
+const DICE_TIERS = [
+  {
+    id: 'pup_safe',
+    label: 'Safe Pup',
+    emoji: '🐶',
+    threshold: 7000,   // win if roll < 7000 (70%)
+    payoutCredits: 1   // 1 credit → TOKENS_PER_CREDIT × 100 minor units
+  },
+  {
+    id: 'pup_brave',
+    label: 'Brave Pup',
+    emoji: '⚡',
+    threshold: 5000,   // 50%
+    payoutCredits: 2
+  },
+  {
+    id: 'pup_degen',
+    label: 'DeGen Pup',
+    emoji: '🔥',
+    threshold: 2000,   // 20%
+    payoutCredits: 5
+  },
+  {
+    id: 'pup_moon',
+    label: 'Moon Pup',
+    emoji: '🌙',
+    threshold: 1000,   // 10%
+    payoutCredits: 10
+  }
+];
+
+// Small helper to ensure dice session state
+function ensureDiceSession(req) {
+  if (!req.session.dice) {
+    req.session.dice = { round: null, lastRollAt: 0 };
+  }
+}
+const diceLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 60,
+  standardHeaders: true,
+  legacyHeaders: false
+});
+// =================== SATOSHI DICE API ===================
+
+// Start a dice round: commit serverSeed, let client choose tier/seed later
+app.post('/api/dice/start', diceLimiter, async (req, res) => {
+  try {
+    const g = gateStartHand(req, 'dice');
+    if (!g.ok) return res.status(403).json(g);
+
+    ensureBank(req);
+    ensureDiceSession(req);
+
+    const clientSeed = (req.body && typeof req.body.clientSeed === 'string')
+      ? req.body.clientSeed.trim()
+      : '';
+
+    const handId     = randomUUID();
+    const serverSeed = randHex(32);
+    const commitHash = sha256hex(serverSeed);
+
+    req.session.dice.round = {
+      handId,
+      commit: commitHash,
+      serverSeed,
+      clientSeed,
+      revealed: false,
+      rolled: false
+    };
+
+    if (hasDb) {
+      try {
+        const p = await db();
+        await getOrCreateUser(req.uid);
+        await ensureDisplayId(req.uid);
+        await p.query(
+          `INSERT INTO fair_rounds(hand_id, user_id, commit_hash, client_seed)
+           VALUES ($1,$2,$3,$4)`,
+          [handId, req.uid, commitHash, clientSeed || null]
+        );
+      } catch (e) {
+        logger.error('fair_rounds insert (dice)', { e: String(e) });
+      }
+    }
+
+    await new Promise((resolve, reject) => {
+      req.session.save(err => err ? reject(err) : resolve());
+    });
+
+    return res.json({
+      ok: true,
+      handId,
+      commit: commitHash,
+      g,
+      tiers: DICE_TIERS.map(t => ({
+        id: t.id,
+        label: t.label,
+        emoji: t.emoji,
+        threshold: t.threshold,
+        payoutCredits: t.payoutCredits
+      }))
+    });
+  } catch (e) {
+    logger.error('dice/start', { e: String(e) });
+    return res.status(500).json({ ok: false, error: 'dice_start_error' });
+  }
+});
+app.post('/api/dice/roll', diceLimiter, async (req, res) => {
+  try {
+    ensureBank(req);
+    ensureDiceSession(req);
+
+    const round = req.session.dice.round;
+    if (!round || !round.handId || !round.serverSeed) {
+      return res.status(400).json({ ok: false, error: 'dice_start_first' });
+    }
+    if (round.rolled) {
+      return res.status(429).json({ ok: false, error: 'already_rolled' });
+    }
+
+    const { tierId, nonce } = req.body || {};
+    const tier = DICE_TIERS.find(t => t.id === tierId);
+    if (!tier) {
+      return res.status(400).json({ ok: false, error: 'bad_tier' });
+    }
+
+    const nonceVal = typeof nonce === 'number' || typeof nonce === 'string'
+      ? String(nonce)
+      : '0';
+
+    const roll = satoshiDiceRoll(
+      round.serverSeed,
+      round.clientSeed,
+      round.handId,
+      nonceVal
+    );
+
+    const win = roll < tier.threshold;
+
+    const toInt = v => Math.floor(Number(v) || 0);
+    const TOKENS_PER_CREDIT = toInt(process.env.TOKENS_PER_CREDIT || 1);
+    const BANK_LIMIT        = toInt(process.env.BANK_CAP || BANK_CAP);
+
+    const points = win ? tier.payoutCredits : 0;
+    const creditMinor = win
+      ? toInt(tier.payoutCredits * TOKENS_PER_CREDIT * 100)
+      : 0;
+
+    // Bank: credit to poker wallet (shared pool) to reuse payout logic
+    req.session.wallet ||= { poker: 0, blackjack: 0 };
+    req.session.wallet.poker = Math.max(
+      0,
+      toInt(req.session.wallet.poker) + creditMinor
+    );
+    req.session.bank = Math.min(
+      BANK_LIMIT > 0 ? BANK_LIMIT : Number.MAX_SAFE_INTEGER,
+      toInt(req.session.wallet.poker) + toInt(req.session.wallet.blackjack)
+    );
+
+    // DB: stats piggyback on poker; points go into dice season_points
+    await getOrCreateUser(req.uid);
+    await saveStatsFor(req.uid, 'poker', {
+      creditMinor,
+      isWin: win,
+      isRoyal: false,
+      flags: []   // you can add e.g. ['dice_big_win'] later
+    });
+    await awardSeasonPointsFor(req.uid, 'dice', points);
+
+    // OPTIONAL: track dice-specific stats if you created user_stats_dice
+    if (hasDb) {
+      try {
+        const p = await db();
+        await p.query(
+          `insert into user_stats_dice(user_id, wins, rolls, big_win, last_seen_at)
+           values ($1, $2, $3, $4, now())
+           on conflict (user_id) do update set
+             wins = user_stats_dice.wins + excluded.wins,
+             rolls = user_stats_dice.rolls + excluded.rolls,
+             big_win = greatest(user_stats_dice.big_win, excluded.big_win),
+             last_seen_at = now()`,
+          [req.uid, win ? 1 : 0, 1, win ? tier.payoutCredits : 0]
+        );
+      } catch (e) {
+        logger.error('user_stats_dice upsert', { e: String(e) });
+      }
+    }
+
+    // Reveal fairness once
+    let fair = null;
+    if (!round.revealed) {
+      fair = {
+        handId: round.handId,
+        commit: round.commit,
+        serverSeed: round.serverSeed,
+        clientSeed: round.clientSeed || null,
+        algo: "roll = sha256(serverSeed:clientSeed:handId:nonce:dice) mod 10000"
+      };
+      round.revealed = true;
+
+      if (hasDb) {
+        try {
+          const p = await db();
+          await p.query(
+            `UPDATE fair_rounds
+               SET server_seed = $2, revealed_at = now()
+             WHERE hand_id = $1`,
+            [round.handId, round.serverSeed]
+          );
+        } catch (e) {
+          logger.error('fair_rounds reveal (dice)', { e: String(e) });
+        }
+      }
+    }
+
+    round.rolled = true;
+
+    await new Promise((resolve, reject) => {
+      req.session.save(err => err ? reject(err) : resolve());
+    });
+
+    return res.json({
+      ok: true,
+      roll,
+      win,
+      tier: {
+        id: tier.id,
+        label: tier.label,
+        threshold: tier.threshold,
+        payoutCredits: tier.payoutCredits
+      },
+      credit: creditMinor,          // minor units
+      points,
+      sessionBalance: req.session.bank,
+      fair
+    });
+  } catch (e) {
+    logger.error('dice/roll', { e: String(e) });
+    return res.status(500).json({ ok: false, error: 'dice_roll_error' });
+  }
+});
+
 
 
 

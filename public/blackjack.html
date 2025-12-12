@@ -38,6 +38,12 @@
        --win-cyan:  #3af5d9;
   --win-pink:  #ff3df7;
   --win-gold:  #ffcc00;
+    --pp-bg: #050015;
+      --pp-card: #120826;
+      --pp-accent1: #00ffc6;
+      --pp-accent2: #ff3df7;
+      --pp-text: #fdfdfd;
+      --pp-muted: #9ca3af;
     }
     /* Always hide elements with [hidden], and loaders by default */
 [hidden] { display: none !important; }
@@ -122,9 +128,19 @@
       color: #021018;
     }
     .btn-primary{
-      background: var(--accent-2);
-      color: #120016;
-      box-shadow: 0 3px 0 #a2259c, 0 0 14px rgba(255,61,247,0.35);
+     border-radius: 999px;
+      border: none;
+      padding: 8px 16px;
+      font-size: 0.9rem;
+      font-weight: 600;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: linear-gradient(135deg, var(--pp-accent1), var(--pp-accent2));
+      color: #020617;
+      box-shadow: 0 10px 25px rgba(0,0,0,0.6);
+      transition: transform 80ms ease, box-shadow 80ms ease, opacity 80ms ease;
     }
     .btn-ghost{
       background: linear-gradient(180deg, rgba(255,255,255,0.06), rgba(255,255,255,0.02));
@@ -796,7 +812,12 @@ body.compact {
       Join Telegram
     </a>
     <a class="btn btn-ghost kk-home" href="/" aria-label="Go to Home">🏠 Home</a>
-    <a class="btn btn-primary" href="/play.html" aria-current="page">Play Poker</a>
+    <a class="btn btn-primary" href="play.html" style="font-size: 1.1rem; padding: 14px 24px;">
+        ♠️ Play Poker
+      </a>
+    <a class="btn btn-primary" href="dice.html" style="font-size: 1.1rem; padding: 14px 24px;">
+  🎲 Play Dice
+</a>
     <a id="navConnect" class="btn btn-ghost" href="/connect.html" aria-current="page">Connect Wallet</a>
   </nav>
   <div class="brand">
@@ -911,7 +932,9 @@ body.compact {
 
       <div style="margin-top:24px; border-top:1px solid rgba(255,255,255,0.1); padding-top:16px;">
         <h2>Claim</h2>
-        <button id="dailyReward" class="btn btn-ghost" style="width:100%; margin-bottom:10px;">Claim Daily Reward</button>
+       <a href="claim.html?tab=daily" class="btn btn-ghost" style="text-align:center; text-decoration:none;">
+    🎁 Claim Daily Reward
+</a>
         <a href="claim.html" class="btn btn-primary" style="width:100%; text-align:center; display:block; padding:12px;">
           FEED ME! 🐾 (Withdraw)
         </a>
@@ -1194,9 +1217,7 @@ function updateBjPanels(snapshotJson) {
 
 
     const payoutEl = document.getElementById('payoutTotal');
-    const dailyBtn = document.getElementById('dailyReward');
     const loading  = document.getElementById('loading');
-
     const bjFair   = document.getElementById('bjFair');
     const bjDealer = document.getElementById('bjDealer');
     const bjPlayer = document.getElementById('bjPlayer');
@@ -1489,102 +1510,12 @@ async function split(){
   }
 }
 
-    // ——— Daily & Payout (copied minimal from poker page) ———
-    async function onDaily(){
-     try {
-        // FIX 1: Pass empty body {}, not fetch options
-        // FIX 2: Result is already JSON, don't call .json()
-        const data = await postWithCsrf(API.daily, {}); 
-
-        if (!data.ok){
-          if (data.error === 'Daily reward already claimed.') {
-              const mins = data.retryInMs ? Math.ceil(data.retryInMs/60000) : 'later';
-              alert('Daily already claimed. Try again in ~' + mins + ' minutes.');
-          } else {
-              alert('Daily Reward Failed: ' + (data.error || 'Unknown error'));
-          }
-          return;
-        }
-
-        // SUCCESS
-        const creditUnits = Math.floor((data.credit || 0) / 100);
-        alert(`Daily Reward Sent! \n\n+${creditUnits} KIBL have been sent directly to your linked wallet.\nTxID: ${data.txId?.slice(0,10)}...`);
-
-        // Refresh balance
-        if (window.loadWalletBalances) {
-            const linked = await fetch('/api/wallet/status').then(r=>r.json()).catch(()=>({}));
-            if (linked?.address) window.loadWalletBalances(linked.address);
-        }
-
-      } catch (e) {
-        console.error(e);
-        alert('Failed to claim daily reward, please try again.');
-      }
-    }
-
-async function onClaimPayout() {
-    if (totalPayout === 0) {
-        // Double-check with server
-        try {
-          const r = await fetch(API.profile, { credentials: 'include' });
-          const d = await r.json();
-          if (d?.ok) {
-            const bankUnits = Math.floor((d.bank || 0) / 100);
-            totalPayout = bankUnits;
-            if (payoutEl) payoutEl.textContent = `Total Payout: ${bankUnits} KIBL`;
-            if (payoutBtn) payoutBtn.disabled = (totalPayout === 0);
-          }
-        } catch {}
-        if (totalPayout === 0) { alert('No payout to claim!'); return; }
-    }
-
-    const token = window.hcaptcha?.getResponse?.();
-    if (!token) {
-        document.querySelector('#payoutCaptcha iframe')?.focus();
-        alert('Please complete the hCaptcha challenge first.');
-        return;
-    }
-
-    try {
-        show(payoutLoading);
-        payoutBtn.disabled = true;
-
-        // FIX: 'data' is returned directly from postWithCsrf
-        const data = await postWithCsrf(API.payout, {
-            playerAddress: addressInput?.value?.trim() || '', // Ensure address is passed if needed, or server uses linked
-            'h-captcha-response': token
-        });
-
-        // Removed: const data = await resp.json()... (Not needed)
-
-        if (!data.ok || data.error) {
-            try { window.hcaptcha?.reset?.(); } catch {}
-            alert('Payout failed: ' + (data.error || 'Unknown error'));
-            return;
-        }
-
-        try { feedSound.currentTime = 0; feedSound.play(); } catch {}
-        alert(`Payout successful! Tx ID: ${data.txId}`);
-
-        totalPayout = data.remainingKIBL ?? 0;
-        payoutEl.textContent = `Total Payout: ${totalPayout} KIBL`;
-        try { window.hcaptcha?.reset?.(); } catch {}
-
-    } catch (e) {
-        console.error('Payout failed:', e);
-        try { window.hcaptcha?.reset?.(); } catch {}
-        alert(e?.message || 'Payout failed. Try again.');
-    } finally {
-        hide(payoutLoading);
-        if (totalPayout > 0) payoutBtn.disabled = false;
-    }
-}
+   
 
     // Wire up
     btnStart.addEventListener('click', startRound);
     btnHit.addEventListener('click',   hit);
     btnStand.addEventListener('click', stand);
-    dailyBtn.addEventListener('click', onDaily);
     btnDouble.addEventListener('click', doubleDown);
     btnSplit .addEventListener('click', split);
 
@@ -1760,7 +1691,7 @@ async function onClaimPayout() {
 
                 // Load Deps
                 const { getSigner } = await import("/assets/wallet-modal.js?v=Christmasv22cachedupdate");
-                const { sendFunds } = await import("/assets/walletBet.bundle.js?v=" + Date.now()); 
+              const { sendFunds } = await import(`/assets/walletBet.bundle.js?t=${Date.now()}`);
 
                 const passphrase = await getSigner();
                 if (!passphrase) throw new Error('Cancelled');
@@ -1961,8 +1892,7 @@ async function onClaimPayout() {
       btn.disabled = true;
       btn.classList.add('busy');
       btn.textContent = 'Loading Wallet...';
-
-      const { placeBet } = await import("/assets/walletBet.bundle.js?v=4");
+      const { placeBet } = await import(`/assets/walletBet.bundle.js?v=ChristmasUpdate`);
       const { getSigner } = await import("/assets/wallet-modal.js?v=Christmasv22cachedupdate");
 
       btn.textContent = 'Authorizing...';

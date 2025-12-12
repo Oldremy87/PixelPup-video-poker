@@ -1,14 +1,21 @@
 <!DOCTYPE html>
+
 <html lang="en">
 <head>
-  <meta charset="UTF-8"/>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>KennelKlub — Christmas Beta</title>
-  <style>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>KennelKlub — PixelPup Arcade (Christmas Beta)</title>
+<style>
     :root{
       --bg:#0b0f19; --panel:#111827; --text:#00ffc6; --text-dim:#7fffe6;
       --accent:#ffcc00; --accent-2:#ff3df7; --accent-3:#6ae3ff;
       --card-bg:#1f2937; --card-border:#3af5d9; --danger:#ff5577; --ok:#45ff99;
+       --pp-bg: #050015;
+      --pp-card: #120826;
+      --pp-accent1: #00ffc6;
+      --pp-accent2: #ff3df7;
+      --pp-text: #fdfdfd;
+      --pp-muted: #9ca3af;
     }
     *{box-sizing:border-box} html,body{height:100%}
     body{
@@ -105,7 +112,19 @@
     .btn:hover { transform: translateY(-2px); filter: brightness(1.1); }
     .btn:active { transform: translateY(1px); box-shadow: 0 1px 0 #b59000; }
     
-    .btn-primary{background:var(--accent-2); color:#120016; box-shadow:0 4px 0 #a2259c, 0 0 14px rgba(255,61,247,.35)}
+    .btn-primary{border-radius: 999px;
+      border: none;
+      padding: 8px 16px;
+      font-size: 0.9rem;
+      font-weight: 600;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: linear-gradient(135deg, var(--pp-accent1), var(--pp-accent2));
+      color: #020617;
+      box-shadow: 0 10px 25px rgba(0,0,0,0.6);
+      transition: transform 80ms ease, box-shadow 80ms ease, opacity 80ms ease;}
     .btn-ghost{
       background:rgba(255,255,255,0.03); color:var(--text);
       border:1px solid rgba(58,245,217,0.3); 
@@ -160,121 +179,97 @@
     }
   </style>
 </head>
-
 <body>
-
-  <header class="header-bar">
-    <div class="brand">
-      <div class="brand-badge">KK</div>
-      <h1>KennelKlub</h1>
-    </div>
-
-    <nav class="header-nav">
-      <a class="btn btn-ghost" href="whitepaper.html">Whitepaper</a>
-      <a class="btn btn-ghost" href="verify.html">Verify</a>
-      <a class="btn btn-ghost" href="https://x.com/Oldremy" target="_blank">@Oldremy</a>
-    </nav>
-  </header>
-
-  <section class="wrap hero">
-    <h1>🎄 Christmas <span class="neon-pink">Beta</span></h1>
-    <p class="readout">
-      Provably Fair Arcade on Nexa. <br>
-      <strong>Wallet Connect · Session Keys · Auto-Payouts</strong>
-    </p>
-    
-    <div class="cta" style="display: flex; justify-content: center; gap: 16px; flex-wrap: wrap; margin-top: 20px;">
-      <a class="btn btn-primary" href="play.html" style="font-size: 1.1rem; padding: 14px 24px;">
-        ♠️ Play Poker
-      </a>
-      <a class="btn btn-primary" href="blackjack.html" style="font-size: 1.1rem; padding: 14px 24px;">
-        🃏 Play Blackjack
-      </a>
-    </div>
-    
-    <div style="margin-top: 20px;">
-      <a class="btn btn-ghost" href="claim.html">Withdraw Winnings</a>
-      <a class="btn btn-telegram" href="https://t.me/NexaKennelKlub" target="_blank" style="margin-left: 10px;">
-        Join Telegram
-      </a>
-    </div>
-  </section>
-
-  <main class="wrap">
-    <h2 style="border-bottom: 1px solid rgba(58,245,217,0.3); padding-bottom: 10px; margin-bottom: 20px;">What's New in Beta</h2>
-    
-    <div class="grid">
-      <article class="feature-card">
-        <h3><span class="icon-lg">🔗</span> Wallet Connect</h3>
-        <p>
+<header class="header-bar">
+<div class="brand">
+<div class="brand-badge">KK</div>
+<h1>KennelKlub</h1>
+</div>
+<nav class="header-nav"><a class="btn btn-ghost" href="leaderboard.html">Leaderboard</a><a class="btn btn-ghost" href="verify.html">Verify</a><a class="btn btn-ghost" href="docs.html">Docs</a><a class="btn btn-ghost" href="roadmap.html">Roadmap</a><a class="btn btn-ghost" href="whitepaper.html">Litepaper</a><a class="btn btn-ghost" href="https://x.com/Oldremy" rel="noopener" target="_blank">@Oldremy</a></nav>
+</header>
+<section class="wrap hero">
+<h1>🎄 Christmas Season <span class="neon-pink">BETA</span> — Mid-Season Update</h1>
+<p class="readout">Instant on-chain bets + provably-fair games on Nexa. <br/><strong>Poker &amp; Blackjack are BETA • Dice is ALPHA • Wallet can send NEXA + KIBL</strong></p>
+<div class="cta" style="display: flex; justify-content: center; gap: 16px; flex-wrap: wrap; margin-top: 20px;">
+<a class="btn btn-primary" href="dice.html" style="font-size: 1.1rem; padding: 14px 24px;">🎲 Play Dice (ALPHA)</a>
+<a class="btn btn-primary" href="play.html" style="font-size: 1.1rem; padding: 14px 24px;">♠️ Play Poker (BETA)</a>
+<a class="btn btn-primary" href="blackjack.html" style="font-size: 1.1rem; padding: 14px 24px;">🃏 Play Blackjack (BETA)</a>
+</div>
+<div style="margin-top: 20px;">
+<a class="btn btn-ghost" href="claim.html">Withdraw Winnings</a>
+<a class="btn btn-telegram" href="https://t.me/NexaKennelKlub" target="_blank" rel="noopener noreferrer">
+    <!-- Telegram SVG -->
+    <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" style="width:18px;height:18px;margin-right:6px;">
+      <path fill="#1C93E3" d="M12 0a12 12 0 1 0 0 24A12 12 0 0 0 12 0z"/>
+      <path fill="#fff" d="M17.9 7.4c.2-1-.8-1.3-1.6-1l-11 4.2c-.7.3-.7.8-.1 1l2.8.9 6.5-4.1c.3-.2.6-.1.4.1l-5.3 4.9-.2 3.1c.5 0 .7-.2 1-.5l1.7-1.6 2.6 1.9c.6.3 1 .1 1.1-.6l1.9-9.3z"/>
+    </svg>
+    Join Telegram
+  </a>
+</div>
+</section>
+<main class="wrap">
+<h2 style="border-bottom: 1px solid rgba(58,245,217,0.3); padding-bottom: 10px; margin-bottom: 20px;">What's New in Beta</h2>
+<div class="grid">
+<article class="feature-card">
+<h3><span class="icon-lg">🔗</span> Wallet Connect</h3>
+<p>
           Link your Nexa wallet securely. Unlock a <strong>15-minute betting session</strong> with a single password. 
-          No more copy-pasting private keys or signing every single hand.
+          No more signing every single hand.
         </p>
-      </article>
-
-      <article class="feature-card">
-        <h3><span class="icon-lg">🎁</span> Secure Payouts</h3>
-        <p>
+</article>
+<article class="feature-card">
+<h3><span class="icon-lg">🎁</span> Secure Payouts</h3>
+<p>
           Withdrawals now automatically route to your <strong>Linked Wallet</strong>. 
           This prevents address spoofing, blocks bots, and makes claiming your winnings one click away.
         </p>
-      </article>
-
-      <article class="feature-card">
-        <h3><span class="icon-lg">🛡️</span> Provably Fair</h3>
-        <p>
+</article>
+<article class="feature-card">
+<h3><span class="icon-lg">🛡️</span> Provably Fair</h3>
+<p>
           We've upgraded our shuffle engine to eliminate modulo bias. 
           Use the new <a href="verify.html" style="text-decoration:underline;">Verify Tool</a> to cryptographically prove 
           that every card dealt is honest.
         </p>
-      </article>
-
-      <article class="feature-card">
-        <h3><span class="icon-lg">🃏</span> Blackjack Alpha</h3>
-        <p>
-          The tables are open. Standard payouts (3:2 on BJ), split, double down, and dealer stands on soft 17.
-          Compete for the "Pack Leader" achievement.
-        </p>
-      </article>
-
-      <article class="feature-card">
-        <h3><span class="icon-lg">🏆</span> Achievements</h3>
-        <p>
+</article>
+<article class="feature-card">
+<h3><span class="icon-lg">🎲</span> Dice Alpha</h3>
+<p>Quick, provably-fair risk tiers. Pick your target, roll, and settle instantly on Nexa. New flow is designed to be one-click-repeat so casuals can keep rolling without friction.</p>
+</article>
+<article class="feature-card">
+<h3><span class="icon-lg">🏆</span> Achievements</h3>
+<p>
           Earn badges and bonus KIBL for milestones like "First Win", "Royal Flush", or "Top Dog" (50 wins).
-          Track your progress in real-time.
+          Track your progress in real-time. New Achievements coming soon for all games.
         </p>
-      </article>
-
-      <article class="feature-card">
-        <h3><span class="icon-lg">🏗️</span> Built on Nexa</h3>
-        <p>
-          We are building the first UTXO-native arcade. 
-          Every bet strengthens the KIBL ecosystem. 
+</article>
+<article class="feature-card">
+<h3><span class="icon-lg">🏗️</span> Built on Nexa</h3>
+<p>
+          We are building the first UTXO-native arcade on Nexa. 
+          Every bet strengthens the KIBL and Nexa ecosystem. 
           <a href="roadmap.html" style="text-decoration:underline;">Check the Roadmap</a>.
         </p>
-      </article>
-    </div>
-  </main>
-
-  <footer>
-    <p>
-      © 2025 KIBL / PixelPup • Stay shiny 🐶✨ <br>
-      <span style="opacity: 0.7; font-size: 0.9em;">Not gambling. No real money. Tokens have no monetary value. 18+ only.</span>
-    </p>
-    <p>
-      <a href="tos.html">Terms</a> • <a href="privacy.html">Privacy</a> • <a href="disclaimer.html">Disclaimer</a>
-    </p>
-  </footer>
-
-  <div id="cookieBar" style="position:fixed; bottom:20px; left:20px; right:20px; background:#111; border:1px solid var(--accent); padding:16px; border-radius:12px; z-index:9999; display:none; flex-wrap:wrap; align-items:center; gap:16px; box-shadow:0 10px 40px rgba(0,0,0,0.8);">
-    <span style="flex:1; font-size:13px; color:#ccc;">
-      We use cookies & session storage to manage your wallet session and game state. 
+</article>
+</div><section class="panel" id="devlog"><h2>🧑‍🔧 Mid-Christmas Dev Log — Speed, Wallet, Dice</h2><p class="readout">What shipped in this mid-season push (and why it matters for long-term legitimacy + value):</p><ul><li><strong>Wallet v2:</strong> send NEXA + KIBL directly inside the app (move winnings, gift friends, use across other dApps).</li><li><strong>Instant gameplay:</strong> refactored signing + broadcasting so bets feel near-instant (no repeated handshakes).</li><li><strong>Resilient infra:</strong> private high-performance Rostrum + client failover to public node when needed.</li><li><strong>Security trade-offs made explicit:</strong> hot wallet in-session for speed; hard re-auth for seed/private key actions.</li><li><strong>Game status update:</strong> Poker &amp; Blackjack are now <strong>BETA</strong>. Dice launches as <strong>ALPHA</strong> (simple, fast, provably fair).</li><li><strong>Quality-of-life:</strong> cleaner onboarding, fewer rate-limit issues, smoother “play again” loops, and continued UX polish.</li></ul><div style="margin-top:10px"><h3>Next up</h3><p class="readout">I’m focusing on wallet-linked seasons (real rewards tied to addresses), clearer fairness verification, and cleaner shared UI wiring across all games so every page feels like one arcade.</p></div></section>
+</main>
+<footer>
+<p>
+      © 2025 KIBL / PixelPup • Stay shiny 🐶✨ <br/>
+<span style="opacity: 0.7; font-size: 0.9em;">Not gambling. Tokens have no monetary value. 18+ only.</span>
+</p>
+<p>
+<a href="tos.html">Terms</a> • <a href="privacy.html">Privacy</a> • <a href="disclaimer.html">Disclaimer</a>
+</p>
+</footer>
+<div id="cookieBar" style="position:fixed; bottom:20px; left:20px; right:20px; background:#111; border:1px solid var(--accent); padding:16px; border-radius:12px; z-index:9999; display:none; flex-wrap:wrap; align-items:center; gap:16px; box-shadow:0 10px 40px rgba(0,0,0,0.8);">
+<span style="flex:1; font-size:13px; color:#ccc;">
+      We use cookies &amp; session storage to manage your wallet session and game state. 
       By playing, you agree to our <a href="privacy.html" style="text-decoration:underline;">Privacy Policy</a>.
     </span>
-    <button id="cookieAccept" class="btn" style="padding: 8px 16px; font-size: 12px;">Accept</button>
-  </div>
-
-  <script>
+<button class="btn" id="cookieAccept" style="padding: 8px 16px; font-size: 12px;">Accept</button>
+</div>
+<script>
     (function(){
       const KEY='kk_cookie_consent_v1';
       const bar=document.getElementById('cookieBar');
@@ -297,14 +292,14 @@
       }
     })();
   </script>
-  <script type="module">
+<script type="module">
   import { initOnboarding } from './assets/onboarding.js';
   // Initialize for "Index" mode (no arg)
   document.addEventListener('DOMContentLoaded', () => initOnboarding());
 </script>
- <footer class="readout" style="text-align:center; opacity:.9; padding:14px 0 6px;">
+<footer class="readout" style="text-align:center; opacity:.9; padding:14px 0 6px;">
     © 2025 KIBL / PixelPup • Stay shiny 🐶✨ •
     <a href="tos.html">Terms</a> • <a href="privacy.html">Privacy</a> • <a href="disclaimer.html">Disclaimer</a>
-  </footer>
+</footer>
 </body>
 </html>

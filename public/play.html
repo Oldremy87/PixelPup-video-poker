@@ -27,6 +27,12 @@
        --win-cyan:  #3af5d9;
   --win-pink:  #ff3df7;
   --win-gold:  #ffcc00;
+    --pp-bg: #050015;
+      --pp-card: #120826;
+      --pp-accent1: #00ffc6;
+      --pp-accent2: #ff3df7;
+      --pp-text: #fdfdfd;
+      --pp-muted: #9ca3af;
       
     }
     /* Always hide elements with [hidden], and loaders by default */
@@ -111,9 +117,19 @@
       color: #021018;
     }
     .btn-primary{
-      background: var(--accent-2);
-      color: #120016;
-      box-shadow: 0 3px 0 #a2259c, 0 0 14px rgba(255,61,247,0.35);
+      border-radius: 999px;
+      border: none;
+      padding: 8px 16px;
+      font-size: 0.9rem;
+      font-weight: 600;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: linear-gradient(135deg, var(--pp-accent1), var(--pp-accent2));
+      color: #020617;
+      box-shadow: 0 10px 25px rgba(0,0,0,0.6);
+      transition: transform 80ms ease, box-shadow 80ms ease, opacity 80ms ease;
     }
     .btn-ghost{
       background: linear-gradient(180deg, rgba(255,255,255,0.06), rgba(255,255,255,0.02));
@@ -701,16 +717,14 @@ body.compact {
     </svg>
     Join Telegram
   </a>
-
-  <a class="btn btn-ghost" href="https://x.com/Oldremy" target="_blank" rel="noopener noreferrer">
-    <!-- X SVG -->
-    <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" style="width:18px;height:18px;margin-right:6px;">
-      <path fill="currentColor" d="M18.9 2H22l-7.7 8.8L22.7 22h-7.1l-5.5-7.3L3.8 22H1l8.4-9.6L1 2h7.2l5 6.7L18.9 2zM17.6 20h1.9L7.4 4H5.6l12 16z"/>
-    </svg>
-    @Oldremy
-  </a>
+<a class="btn btn-primary" href="dice.html" style="font-size: 1.1rem; padding: 14px 24px;">
+  🎲 Play Dice
+</a>
+<a class="btn btn-primary" href="blackjack.html" style="font-size: 1.1rem; padding: 14px 24px;">
+        🃏 Play Blackjack
+      </a>
       <a class="btn btn-ghost" href="/"              class="kk-home" aria-label="Go to Home">🏠 Home</a>
-     <a class = "btn btn-primary" href="blackjack.html">Play BlackJack</a>
+     
     <a id="navConnect" class="btn btn-ghost" href="/connect.html" aria-current="page">Connect Wallet</a>
 
 
@@ -803,7 +817,9 @@ body.compact {
   <h2>Claim</h2>
   
     <div class="row">
-      <button id="dailyReward" class="btn btn-ghost">Claim Daily Reward</button>
+      <a href="claim.html?tab=daily" class="btn btn-ghost" style="text-align:center; text-decoration:none;">
+    🎁 Claim Daily Reward
+</a>
        <a href="claim.html" class="btn btn-primary" style="width:100%; text-align:center; display:block; padding:12px;">
           FEED ME! 🐾 (Withdraw)
         </a>
@@ -867,7 +883,6 @@ const API = Object.freeze({
 const addressInput   = document.getElementById(IDS.address);
 const loading        = document.getElementById(IDS.loading);
 const payoutLoading  = loading;
-const dailyRewardBtn = document.getElementById(IDS.daily);
 const dealBtn        = document.getElementById(IDS.deal);
 const drawBtn        = document.getElementById(IDS.draw);
 const payoutEl       = document.getElementById(IDS.payout);
@@ -1428,109 +1443,13 @@ async function draw() {
     alert('Draw failed.');
   }
 }
-async function onDailyReward() {
-try {
-    const res = await postWithCsrf(API.daily, { method: 'POST', credentials: 'include' });
-    const data = await res.json();
-
-    if (!data.ok){
-      if (data.error === 'Daily reward already claimed.') {
-          const mins = data.retryInMs ? Math.ceil(data.retryInMs/60000) : 'later';
-          alert('Daily already claimed. Try again in ~' + mins + ' minutes.');
-      } else {
-          alert('Daily Reward Failed: ' + (data.error || 'Unknown error'));
-      }
-      return;
-    }
-
-    // SUCCESS: It was sent directly to the wallet
-    const creditUnits = Math.floor((data.credit || 0) / 100);
-    alert(`Daily Reward Sent! \n\n+${creditUnits} KIBL have been sent directly to your linked wallet.\nTxID: ${data.txId?.slice(0,10)}...`);
-
-    // Refresh the WALLET balance, not the payout total
-    const linked = await fetch('/api/wallet/status').then(r=>r.json()).catch(()=>({}));
-    if (linked?.address && window.loadWalletBalances) {
-        window.loadWalletBalances(linked.address);
-    }
-
-  } catch (e) {
-    console.error(e);
-    alert('Failed to claim daily reward, please try again.');
-  }
-}
-
-async function onClaimPayout() {
-    if (totalPayout === 0) {
-    // Double-check with the server in case the local variable is stale
-    try {
-      const r = await fetch(API.profile, { credentials: 'include' });
-      const d = await r.json();
-      if (d?.ok) {
-        const bankUnits = Math.floor((d.bank || 0) / 100);
-        totalPayout = bankUnits;
-        if (payoutEl) payoutEl.textContent = `Total Payout: ${bankUnits} KIBL`;
-        if (payoutBtn) payoutBtn.disabled = (totalPayout === 0);
-      }
-    } catch {}
-    if (totalPayout === 0) { alert('No payout to claim!'); return; }
- }
-
-  // Visible hCaptcha: ensure the user solved the challenge first
-  const token = window.hcaptcha?.getResponse?.();
-  if (!token) {
-    // nudge: focus the widget and ask the user to complete it
-    document.querySelector('#payoutCaptcha iframe')?.focus();
-    alert('Please complete the hCaptcha challenge first.');
-    return;
-  }
-
-  try {
-    show(payoutLoading);
-    payoutBtn.disabled = true;
-
-    const resp = await postWithCsrf(API.payout, {
-      method: 'POST',
-      credentials: 'include',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        playerAddress,
-        'h-captcha-response': token    // <- standard field name
-      })
-    });
-
-    const data = await resp.json().catch(() => ({}));
-
-    if (!resp.ok || data.error) {
-      try { window.hcaptcha?.reset?.(); } catch {}
-      alert('Payout failed: ' + (data.error || resp.statusText));
-      return;
-    }
-
-    try { feedSound.currentTime = 0; feedSound.play(); } catch {}
-    alert(`Payout successful! Tx ID: ${data.txId}`);
-
-    totalPayout = data.remainingKIBL ?? 0;
-    payoutEl.textContent = `Total Payout: ${totalPayout} KIBL`;
-    // Reset so the user can claim again in the future
-    try { window.hcaptcha?.reset?.(); } catch {}
-
-  } catch (e) {
-    console.error('Payout failed:', e);
-    try { window.hcaptcha?.reset?.(); } catch {}
-    alert(e?.message || 'Payout failed. Try again.');
-  } finally {
-    hide(payoutLoading);
-    
-  }
-}
-
 
 
   function checkAchievements() {}
     
 
   // ===== Wire up existing buttons/ids without renaming them =====
-  dailyRewardBtn?.addEventListener('click', onDailyReward);
+ 
   dealBtn?.addEventListener('click', startGame);
   drawBtn?.addEventListener('click', draw);
 
@@ -1795,7 +1714,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 // Load Deps
                 const { getSigner } = await import("/assets/wallet-modal.js?v=Christmasv22cachedupdate");
-                const { sendFunds } = await import("/assets/walletBet.bundle.js?v=" + Date.now()); 
+                const { sendFunds } = await import(`/assets/walletBet.bundle.js?t=${Date.now()}`);
 
                 const passphrase = await getSigner();
                 if (!passphrase) throw new Error('Cancelled');
@@ -1899,7 +1818,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     try {
       // Lazy load dependencies
-      const { loadWallet } = await import("/assets/walletBet.bundle.js?v=5");
+      const { loadWallet } = await import(`/assets/walletBet.bundle.js?t=${Date.now()}`);
       const { getSigner } = await import("/assets/wallet-modal.js?v=Christmasv22cachedupdate");
 
       const pass = await getSigner();
@@ -1933,7 +1852,7 @@ document.addEventListener('DOMContentLoaded', () => {
       btn.textContent = 'Loading Wallet...';
 
       // Lazy load dependencies
-      const { placeBet } = await import("/assets/walletBet.bundle.js?v=5");
+      const { placeBet } = await import(`/assets/walletBet.bundle.js?v=ChristmasUpdate`);
       const { getSigner } = await import("/assets/wallet-modal.js?v=Christmasv22cachedupdate");
 
       btn.textContent = 'Authorizing...';

@@ -3,62 +3,114 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <title>Claim Winnings - KennelKlub</title>
+  <title>Treasury - KennelKlub</title>
   <script src="https://hcaptcha.com/1/api.js" async defer></script>
   <style>
-    body { background: #0b0f19; color: #00ffc6; font-family: system-ui, sans-serif; padding: 20px; display: grid; place-items: center; height: 100vh; margin: 0; }
-    .panel { background: #111827; border: 1px solid #3af5d9; padding: 30px; border-radius: 16px; max-width: 400px; width: 100%; text-align: center; box-shadow: 0 0 40px rgba(0,0,0,0.5); }
-    h1 { margin-top: 0; color: #ffcc00; }
-    .btn { background: #ffcc00; color: #000; padding: 14px; width: 100%; border: 0; border-radius: 10px; font-weight: bold; cursor: pointer; font-size: 16px; margin-top: 20px; }
-    .btn:disabled { background: #333; color: #666; cursor: not-allowed; }
-    .readout { color: #7fffe6; margin: 10px 0; line-height: 1.5; }
-    .address { font-family: monospace; background: #000; padding: 8px; border-radius: 6px; font-size: 12px; color: #aaa; word-break: break-all; }
+    body { background: #0b0f19; color: #00ffc6; font-family: system-ui, sans-serif; padding: 20px; display: grid; place-items: center; min-height: 100vh; margin: 0; }
+    .panel { background: #111827; border: 1px solid #3af5d9; padding: 24px; border-radius: 16px; max-width: 420px; width: 100%; text-align: center; box-shadow: 0 0 40px rgba(0,0,0,0.5); }
+    h1 { margin-top: 0; color: #ffcc00; font-size: 1.5rem; }
+    
+    /* Tabs */
+    .tabs { display: flex; gap: 10px; margin-bottom: 20px; border-bottom: 1px solid #333; padding-bottom: 10px; }
+    .tab { flex: 1; background: transparent; border: 0; color: #7fffe6; cursor: pointer; padding: 8px; font-weight: bold; border-radius: 8px; }
+    .tab.active { background: rgba(58,245,217,0.15); color: #fff; border: 1px solid #3af5d9; }
+    
+    .btn { background: #ffcc00; color: #000; padding: 14px; width: 100%; border: 0; border-radius: 10px; font-weight: bold; cursor: pointer; font-size: 16px; margin-top: 15px; transition: transform 0.1s; }
+    .btn:active { transform: translateY(1px); }
+    .btn:disabled { background: #333; color: #666; cursor: not-allowed; transform: none; }
+    .btn.daily { background: #ff3df7; color: #fff; text-shadow: 0 1px 2px rgba(0,0,0,0.5); }
+    
+    .readout { color: #7fffe6; margin: 10px 0; line-height: 1.5; font-size: 0.95rem; }
+    .address { font-family: monospace; background: #000; padding: 10px; border-radius: 8px; font-size: 12px; color: #aaa; word-break: break-all; border: 1px dashed #444; margin: 10px 0; }
+    .hidden { display: none; }
+    .nav-link { color: #3af5d9; text-decoration: none; display: inline-block; margin-top: 20px; font-size: 0.9rem; }
   </style>
 </head>
 <body>
-  <div class="panel">
-    <h1>Claim Winnings</h1>
-    
-    <div id="loading" class="readout">Checking Balance...</div>
-    
-    <div id="content" style="display:none">
-      <p class="readout" style="font-size: 1.4em; font-weight: bold;" id="balDisplay">0 KIBL</p>
-      <p class="readout">Sending to linked wallet:</p>
-      <div class="address" id="addrDisplay">...</div>
-      
-      <div class="h-captcha" data-sitekey="170a6dc4-35b6-4266-a2ce-6f3eb8c85d9c" style="margin-top:20px"></div>
-      
-      <button id="claimBtn" class="btn">Send to Wallet</button>
-    </div>
 
-    <p style="margin-top: 24px;"><a href="/" style="color: #3af5d9; text-decoration: none;">← Back to Arcade</a></p>
+  <div class="panel">
+    <h1>🏛️ Treasury</h1>
+
+    <div id="loading" class="readout">Loading Profile...</div>
+
+    <div id="mainContent" class="hidden">
+      <div class="tabs">
+        <button class="tab active" onclick="switchTab('withdraw')">Withdraw</button>
+        <button class="tab" onclick="switchTab('daily')">Daily Reward</button>
+      </div>
+
+      <div id="view-withdraw">
+        <p class="readout" style="font-size: 1.8em; font-weight: bold; color: #fff; margin: 10px 0;" id="balDisplay">0 KIBL</p>
+        <p class="readout" style="font-size: 0.85rem;">Sending to linked wallet:</p>
+        <div class="address" id="addrDisplay">...</div>
+        
+        <div class="h-captcha" data-sitekey="170a6dc4-35b6-4266-a2ce-6f3eb8c85d9c" style="margin-top:15px"></div>
+        <button id="claimBtn" class="btn">Send to Wallet</button>
+      </div>
+
+      <div id="view-daily" class="hidden">
+        <div style="font-size: 3rem; margin: 10px 0;">🎁</div>
+        <p class="readout">Claim your free daily KIBL.<br>Rewards are sent directly to your wallet.</p>
+        <div id="dailyTimer" class="readout" style="color: #ff5577; font-weight: bold;"></div>
+        <button id="dailyBtn" class="btn daily">Claim Daily Reward</button>
+      </div>
+
+    </div>
+    
+    <a href="/" class="nav-link">← Back to Arcade</a>
   </div>
 
 <script>
+  let csrfToken = null;
+
   async function init() {
-    // Get Profile & Wallet Status
-    const [p, w] = await Promise.all([
-      fetch('/api/profile').then(r=>r.json()),
-      fetch('/api/wallet/status').then(r=>r.json())
-    ]);
+    try {
+      // 1. Fetch CSRF & Profile in parallel
+      const [cRes, pRes, wRes] = await Promise.all([
+        fetch('/api/csrf'),
+        fetch('/api/profile'),
+        fetch('/api/wallet/status')
+      ]);
 
-    document.getElementById('loading').style.display = 'none';
-    
-    if (!w.linked || !w.address) {
-      document.querySelector('.panel').innerHTML = `
-        <h1>Wallet Not Linked</h1>
-        <p class="readout">You must link a wallet to withdraw.</p>
-        <a href="/connect.html" class="btn">Connect Wallet</a>
-      `;
-      return;
+      const cData = await cRes.json();
+      const pData = await pRes.json();
+      const wData = await wRes.json();
+
+      csrfToken = cData.csrfToken;
+      document.getElementById('loading').classList.add('hidden');
+
+      // Check Wallet Link
+      if (!wData.linked || !wData.address) {
+        document.querySelector('.panel').innerHTML = `
+          <h1>Wallet Not Linked</h1>
+          <p class="readout">You must link a wallet to use the Treasury.</p>
+          <a href="/connect.html" class="btn">Connect Wallet</a>
+          <a href="/" class="nav-link">← Back</a>
+        `;
+        return;
+      }
+
+      document.getElementById('mainContent').classList.remove('hidden');
+      setupWithdraw(pData, wData);
+      setupDaily();
+
+      // Auto-switch to daily if requested via URL (e.g. claim.html?tab=daily)
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('tab') === 'daily') {
+        switchTab('daily');
+      }
+
+    } catch (e) {
+      document.getElementById('loading').textContent = "Error loading data. Please refresh.";
     }
+  }
 
-    document.getElementById('content').style.display = 'block';
+  // --- Withdraw Logic ---
+  function setupWithdraw(p, w) {
     const bal = Math.floor((p.bank || 0) / 100);
-    
     document.getElementById('balDisplay').textContent = `${bal} KIBL`;
     document.getElementById('addrDisplay').textContent = w.address;
-    
+
     const btn = document.getElementById('claimBtn');
     if (bal <= 0) {
       btn.disabled = true;
@@ -73,38 +125,74 @@
       btn.textContent = 'Sending...';
       
       try {
-        const c = await fetch('/api/csrf');
-        const cj = await c.json();
-        
         const res = await fetch('/api/payout', {
           method: 'POST',
-          headers: { 
-            'Content-Type': 'application/json',
-            'x-csrf-token': cj.csrfToken 
-          },
+          headers: { 'Content-Type': 'application/json', 'x-csrf-token': csrfToken },
           body: JSON.stringify({ 'h-captcha-response': token })
         });
-        
         const d = await res.json();
-        if (d.success) {
-          document.querySelector('.panel').innerHTML = `
-            <h1>Payout Sent!</h1>
-            <p class="readout">Transaction ID:</p>
-            <div class="address">${d.txId}</div>
-            <a href="/" class="btn">Back to Arcade</a>
-          `;
+        
+        if (d.txId) {
+          alert(`Success! Sent. TxID: ${d.txId}`);
+          window.location.reload();
         } else {
-          alert('Error: ' + d.error);
+          alert('Error: ' + (d.error || 'Unknown'));
+          window.hcaptcha.reset();
           btn.disabled = false;
           btn.textContent = 'Send to Wallet';
-          window.hcaptcha.reset();
         }
       } catch (e) {
-        alert('Network error');
+        alert('Network Error');
         btn.disabled = false;
       }
     };
   }
+
+  // --- Daily Reward Logic ---
+  function setupDaily() {
+    const btn = document.getElementById('dailyBtn');
+    btn.onclick = async () => {
+      btn.disabled = true;
+      btn.textContent = 'Claiming...';
+      try {
+        const res = await fetch('/api/daily-reward', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'x-csrf-token': csrfToken },
+          body: JSON.stringify({})
+        });
+        const d = await res.json();
+
+        if (d.ok || d.txId) {
+            const amt = Math.floor((d.credit || 0) / 100);
+            alert(`Reword Sent! +${amt} KIBL sent to your wallet.`);
+            btn.textContent = 'Claimed!';
+        } else {
+            if (d.error === 'Daily reward already claimed.') {
+                const mins = d.retryInMs ? Math.ceil(d.retryInMs/60000) : 'some';
+                alert(`Already claimed. Try again in ${mins} minutes.`);
+            } else {
+                alert('Error: ' + d.error);
+            }
+            btn.disabled = false;
+            btn.textContent = 'Claim Daily Reward';
+        }
+      } catch (e) {
+        alert('Network Error');
+        btn.disabled = false;
+      }
+    };
+  }
+
+  // --- Tab Switcher ---
+  window.switchTab = function(tabName) {
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.tab')[tabName === 'withdraw' ? 0 : 1].classList.add('active');
+
+    document.getElementById('view-withdraw').classList.add('hidden');
+    document.getElementById('view-daily').classList.add('hidden');
+    document.getElementById('view-' + tabName).classList.remove('hidden');
+  }
+
   init();
 </script>
 </body>
