@@ -4,6 +4,7 @@
   <meta charset="utf-8" />
   <title>PixelPup Dice</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <script src="https://hcaptcha.com/1/api.js" async defer></script>
   <style>
   :root{
       --ui-scale: 1;
@@ -32,63 +33,154 @@
       --pp-muted: #9ca3af;
       
     }
+    /* Always hide elements with [hidden], and loaders by default */
+    [hidden] { display: none !important; }
+    .loading { display: none !important; }
+    .loading.show { display: block !important; }
+
+    /* Visually hidden utility */
+    .sr-only { 
+      position: absolute !important;
+      width: 1px; height: 1px; padding: 0; margin: -1px;
+      overflow: hidden; clip: rect(0,0,1px,1px); white-space: nowrap; border: 0;
+    }
+
+    * { box-sizing: border-box; }
+    html, body { height: 100%; }
     body {
       margin: 0;
-      min-height: 100vh;
-      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      color: var(--pp-text);
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
       background:
-        radial-gradient(circle at top left, rgba(0,255,198,0.2), transparent 60%),
-        radial-gradient(circle at bottom right, rgba(255,61,247,0.2), transparent 60%),
-        var(--pp-bg);
-      display: flex;
-      flex-direction: column; /* Stacks Header -> Content -> Footer vertically */
-  min-height: 100vh;
-      padding: 16px;
-    }
-    header.header-bar{
-      display:flex; align-items:center; justify-content:space-between; gap:16px; 
-      margin:0 auto 24px; max-width:1100px; padding-bottom: 12px;
-      border-bottom: 1px solid rgba(58,245,217,0.1);
-    }
-    .brand{display:flex; align-items:center; gap:12px;}
-    .brand h1 { margin: 0; font-size: 1.4rem; letter-spacing: 0.5px; text-shadow:0 0 12px rgba(0,255,198,0.4); }
-    .brand-badge{
-      width:40px;height:40px;border-radius:10px;border:2px solid var(--card-border);
-      box-shadow:0 0 14px rgba(0,255,198,.2); display:grid; place-items:center;
-      background:linear-gradient(180deg,rgba(255,255,255,.06),rgba(255,255,255,.02)); 
-      font-weight:800; color:var(--accent); font-size: 1.1rem;
-    }
-    .frame {
-      max-width: 960px;
-      width: 100%;
-      background: radial-gradient(circle at top, rgba(255,255,255,0.06), transparent 60%), var(--pp-card);
-      border-radius: 24px;
-      border: 1px solid rgba(255,255,255,0.08);
-      box-shadow:
-        0 18px 40px rgba(0,0,0,0.6),
-        0 0 0 1px rgba(0,0,0,0.7);
+        radial-gradient(1200px 800px at 50% -20%, #13203b 0%, #0b0f19 60%, #05070d 100%),
+        linear-gradient(180deg, #0b0f19 0%, #05070d 100%);
+      color: var(--text);
       padding: 24px;
-      display: grid;
-      grid-template-columns: minmax(0, 2fr) minmax(0, 1.3fr);
-      gap: 24px;
-    }
-    @media (max-width: 768px) {
-      .frame { grid-template-columns: minmax(0, 1fr); }
-    }
-    .title {
       display: flex;
+      flex-direction: column;
+    }
+    
+    /* Toast System */
+    #toasts {
+      position: fixed; top: 12px; right: 12px; z-index: 9999;
+      display: flex; flex-direction: column; gap: 8px;
+      pointer-events: none;
+    }
+    .toast {
+      pointer-events: auto;
+      background: rgba(20,20,20,.92);
+      color: #fff; border-radius: 12px; padding: 10px 12px;
+      box-shadow: 0 8px 24px rgba(0,0,0,.25);
+      font: 600 14px system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+      transform: translateY(-6px); opacity: 0;
+      transition: transform .18s ease-out, opacity .18s ease-out;
+      max-width: 320px; line-height: 1.25;
+      border-left: 4px solid #888;
+    }
+    .toast.show { transform: translateY(0); opacity: 1; }
+    .toast.hide { transform: translateX(8px); opacity: 0; }
+    .toast.win   { border-left-color: #22c55e; }  /* green */
+    .toast.bonus { border-left-color: #06b6d4; }  /* cyan  */
+    .toast.error { border-left-color: #ef4444; }  /* red   */
+    .toast .close { float: right; margin-left: 8px; font-weight: 700; cursor: pointer; opacity: .7; }
+    .toast .close:hover { opacity: 1; }
+    @media (prefers-reduced-motion: reduce) { .toast, .toast.show, .toast.hide { transition: none; } }
+
+    /* Header / Nav */
+    header { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin: 0 auto 16px; max-width: 1100px; width: 100%; }
+    .brand { display: flex; align-items: center; gap: 10px; letter-spacing: 0.5px; text-shadow: 0 0 10px rgba(0,255,198,0.6); }
+    .brand-badge {
+      width: 36px; height: 36px; border-radius: 10px; border: 2px solid var(--card-border);
+      box-shadow: 0 0 14px rgba(0,255,198,0.2); display: grid; place-items: center;
+      background: linear-gradient(180deg, rgba(255,255,255,0.06), rgba(255,255,255,0.02));
+      font-weight: 700; color: var(--accent);
+    }
+    nav { display: flex; gap: 10px; flex-wrap: wrap; }
+    .brand h1 { margin: 0; font-size: 1.4rem; letter-spacing: 0.5px; text-shadow:0 0 12px rgba(0,255,198,0.4); }
+
+    /* Buttons */
+    .btn {
+      appearance: none; border: 0; cursor: pointer; padding: 10px 14px; border-radius: 12px;
+      color: #000; background: var(--accent); text-decoration: none;
+      box-shadow: 0 3px 0 #b59000, 0 0 12px rgba(255,204,0,0.35);
+      font-weight: 700; letter-spacing: .2px; display: inline-flex; align-items: center; gap: 8px;
+      transition: transform .06s ease, filter .12s ease, box-shadow .12s ease;
+      font-size: 12px;
+    }
+    .btn:hover { transform: translateY(-1px); filter: brightness(1.05); }
+    .btn:active { transform: translateY(1px); }
+    .btn:disabled { background: #555; color: #111; box-shadow: none; cursor: not-allowed; }
+    .btn-telegram{
+      background: var(--accent-3);
+      box-shadow: 0 3px 0 #2aa7bf, 0 0 14px rgba(106,227,255,0.35);
+      color: #021018;
+    }
+    .btn-primary{
+      border-radius: 999px;
+      border: none;
+      padding: 8px 16px;
+      font-size: 0.9rem;
+      font-weight: 600;
+      cursor: pointer;
+      display: inline-flex;
       align-items: center;
+      gap: 8px;
+      background: linear-gradient(135deg, var(--pp-accent1), var(--pp-accent2));
+      color: #020617;
+      box-shadow: 0 10px 25px rgba(0,0,0,0.6);
+      transition: transform 80ms ease, box-shadow 80ms ease, opacity 80ms ease;
+    }
+    .btn-ghost{
+      background: linear-gradient(180deg, rgba(255,255,255,0.06), rgba(255,255,255,0.02));
+      color: var(--text);
+      border: 1px solid rgba(58,245,217,0.35);
+      box-shadow: 0 0 12px rgba(0,255,198,0.18) inset, 0 0 12px rgba(0,255,198,0.12);
+    }
+    .btn-secondary {
+      background: transparent;
+      color: var(--pp-muted);
+      border: 1px solid rgba(148,163,184,0.6);
+      box-shadow: none;
+    }
+
+    /* Layout */
+    .wrap { max-width: 1100px; margin: 0 auto; width: 100%; flex: 1; }
+    .hud {
+      display: grid;
+      grid-template-columns: 2fr 1fr;
       gap: 12px;
-      margin-bottom: 4px;
     }
-    .title h1 {
-      margin: 0;
-      font-size: 1.4rem;
-      letter-spacing: 0.08em;
-      text-transform: uppercase;
-      color: var(--pp-accent1);
+    .panel-table { grid-column: 1 / 2; }
+    .panel-claim { grid-column: 2 / 3; }
+    @media (max-width: 1024px) {
+      .hud { grid-template-columns: 1fr; }
+      .panel-table, .panel-claim { grid-column: 1 / -1; }
     }
+    @media (max-width: 720px){
+      header { flex-direction: column; align-items: stretch; gap: 8px; }
+      nav { justify-content: center; }
+      .brand h1 { font-size: 1.35rem; }
+      body { padding: 12px; }
+    }
+
+    /* Panels */
+    .panel {
+      display: block;
+      background: linear-gradient(180deg, rgba(255,255,255,0.04), rgba(255,255,255,0.01));
+      border: 1px solid rgba(58,245,217,0.3);
+      border-radius: 16px;
+      padding: 16px;
+      backdrop-filter: blur(4px);
+      box-shadow: 0 0 24px rgba(0,255,198,0.06) inset, 0 0 24px rgba(0,255,198,0.08);
+    }
+    .dice-main {
+      border-radius: 18px;
+      border: 1px solid rgba(255,255,255,0.08);
+      padding: 18px;
+      background: radial-gradient(circle at top left, rgba(0,255,198,0.09), transparent 55%);
+    }
+
+    /* Text & Misc */
+    .subtitle { margin: 0; font-size: 0.9rem; color: var(--pp-muted); }
     .badge {
       font-size: .75rem;
       text-transform: uppercase;
@@ -98,28 +190,14 @@
       color: var(--pp-accent2);
       background: rgba(0,0,0,0.4);
     }
-    .subtitle {
-      margin: 0;
-      font-size: 0.9rem;
-      color: var(--pp-muted);
-    }
-    .dice-main {
-      border-radius: 18px;
-      border: 1px solid rgba(255,255,255,0.08);
-      padding: 18px;
-      background: radial-gradient(circle at top left, rgba(0,255,198,0.09), transparent 55%);
-    }
-    .tier-list {
-      display: grid;
-      gap: 8px;
-      margin: 16px 0;
-    }
+    .readout { color: var(--text-dim); font-size: 12px; margin: 4px 0; }
+    .hint { font-size: 0.8rem; color: var(--pp-muted); margin-top: 6px; }
+
+    /* Dice Tiers */
+    .tier-list { display: grid; gap: 8px; margin: 16px 0; }
     .tier {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      padding: 10px 12px;
-      border-radius: 14px;
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 10px 12px; border-radius: 14px;
       background: rgba(0,0,0,0.4);
       border: 1px solid rgba(255,255,255,0.1);
       cursor: pointer;
@@ -135,1589 +213,303 @@
       box-shadow: 0 0 0 1px rgba(255,61,247,0.6);
       background: linear-gradient(135deg, rgba(0,255,198,0.16), rgba(255,61,247,0.12));
     }
-    .tier-main {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-    .tier-emoji {
-      font-size: 1.5rem;
-    }
-    .tier-name {
-      font-size: 0.9rem;
-      font-weight: 600;
-      color:var(--pp-accent2)
-    }
-    .tier-desc {
-      font-size: 0.8rem;
-      color: var(--pp-muted);
-    }
-    .tier-meta {
-      text-align: right;
-      font-size: 0.8rem;
-    }
-    .tier-meta strong {
-      color: var(--pp-accent1);
-    }
-    .result {
-      margin-top: 10px;
-      font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
-      font-size: 0.9rem;
-    }
-    .result span.roll {
-      font-size: 1.6rem;
-      font-weight: 700;
-    }
-    .pill {
-      display: inline-flex;
-      align-items: center;
-      gap: 4px;
-      padding: 2px 8px;
-      border-radius: 999px;
-      border: 1px solid rgba(255,255,255,0.1);
-      font-size: 0.7rem;
-      text-transform: uppercase;
-      letter-spacing: .08em;
-    }
-    .pill.win {
-      border-color: var(--pp-accent1);
-      color: var(--pp-accent1);
-    }
-    .pill.lose {
-      border-color: #f97373;
-      color: #fecaca;
-    }
-    .controls {
-      margin-top: 14px;
-      display: flex;
-      flex-wrap: wrap;
-      gap: 10px;
-      align-items: center;
-    }
-    button {
-      border-radius: 999px;
-      border: none;
-      padding: 8px 16px;
-      font-size: 0.9rem;
-      font-weight: 600;
-      cursor: pointer;
-      display: inline-flex;
-      align-items: center;
-      gap: 8px;
-      background: linear-gradient(135deg, var(--pp-accent1), var(--pp-accent2));
-      color: #020617;
-      box-shadow: 0 10px 25px rgba(0,0,0,0.6);
-      transition: transform 80ms ease, box-shadow 80ms ease, opacity 80ms ease;
-    }
-    button:hover:not(:disabled) {
-      transform: translateY(-1px);
-      box-shadow: 0 12px 26px rgba(0,0,0,0.7);
-    }
-    button:disabled {
-      opacity: 0.6;
-      cursor: default;
-      box-shadow: none;
-    }
-    .btn-secondary {
-      background: transparent;
-      color: var(--pp-muted);
-      border: 1px solid rgba(148,163,184,0.6);
-      box-shadow: none;
-    }
-    .side {
-      display: flex;
-      flex-direction: column;
-      justify-content: space-between;
-      gap: 18px;
-    }
-    .fx-confetti{ position:fixed; inset:0; pointer-events:none; z-index:9999; overflow:hidden; }
-.fx-confetti i{
-  position:absolute; top:-12px; left: var(--x,50%);
-  width:8px; height:14px; border-radius:2px;
-  background: linear-gradient(var(--rot,0deg),
-              var(--win-pink), var(--win-gold), var(--win-cyan));
-  opacity:.95;
-  transform: rotate(var(--rot,0deg));
-  animation: arcade-confetti var(--dur,1200ms) ease-out forwards;
-}
-@keyframes arcade-confetti{
-  0%   { transform: translateY(-10px) rotate(var(--rot,0deg)); }
-  100% { transform: translateY(calc(100vh + 12px)) rotate(calc(var(--rot,0deg) + 260deg)); opacity:0; }
-}
-#payoutTotal{ position: relative; display:inline-block; border-radius:12px; padding:2px 6px; }
+    .tier-main { display: flex; align-items: center; gap: 8px; }
+    .tier-emoji { font-size: 1.5rem; }
+    .tier-name { font-size: 0.9rem; font-weight: 600; color:var(--pp-accent2) }
+    .tier-desc { font-size: 0.8rem; color: var(--pp-muted); }
+    .tier-meta { text-align: right; font-size: 0.8rem; }
+    .tier-meta strong { color: var(--pp-accent1); }
 
-/* One-shot bling class we add/remove from JS */
-.payout-win{
-  /* quick pop + glow + sheen */
-  animation:
-    arcade-pop .18s ease-out,
-    arcade-glow 1.2s ease-out;
-  filter: saturate(1.2);
-}
-
-/* Neon aura behind the text */
-.payout-win::before{
-  content:"";
-  position:absolute; inset:-8px;
-  border-radius:14px;
-  background: conic-gradient(from 0deg,
-    var(--win-pink), var(--win-gold), var(--win-cyan), var(--win-pink));
-  filter: blur(14px) opacity(.55);
-  z-index:-1;
-  animation: arcade-spin 1.1s ease-out both;
-}
-
-/* Shiny sweep across the text */
-.payout-win::after{
-  content:"";
-  position:absolute; inset:-2px;
-  border-radius:12px;
-  background:
-    linear-gradient(120deg,
-      rgba(255,255,255,0) 0%,
-      rgba(255,255,255,.25) 15%,
-      rgba(255,255,255,0) 32%);
-  transform: translateX(-140%);
-  animation: arcade-sheen .9s ease-out .06s forwards;
-  pointer-events:none;
-}
-
-@keyframes arcade-pop{
-  0% { transform: scale(1); }
-  70%{ transform: scale(1.08); }
-  100%{ transform: scale(1); }
-}
-@keyframes arcade-glow{
-  0%   { box-shadow: 0 0 0 rgba(0,0,0,0); }
-  45%  { box-shadow: 0 0 18px rgba(255,61,247,.25), 0 0 32px rgba(58,245,217,.18) inset; }
-  100% { box-shadow: 0 0 0 rgba(0,0,0,0); }
-}
-@keyframes arcade-spin{
-  from { transform: rotate(0deg) scale(1.02); }
-  to   { transform: rotate(120deg) scale(1); }
-}
-@keyframes arcade-sheen{
-  to { transform: translateX(140%); }
-}
-    .panel {
-      padding: 14px;
-      border-radius: 16px;
-      border: 1px solid rgba(148,163,184,0.4);
-      background: rgba(15,23,42,0.8);
+    /* Dice Reels */
+    .dice-display { display: flex; justify-content: center; gap: 12px; margin: 20px 0; perspective: 1000px; }
+    .reel-container {
+      width: 60px; height: 80px; background: #05070d;
+      border: 2px solid var(--card-border); border-radius: 12px;
+      overflow: hidden; position: relative;
+      box-shadow: inset 0 0 15px rgba(0,0,0,0.8), 0 0 10px rgba(58,245,217,0.2);
     }
-    .panel h2 {
-      margin: 0 0 8px;
-      font-size: 0.9rem;
-      text-transform: uppercase;
-      letter-spacing: .08em;
-      color: var(--pp-accent1);
+    .reel-strip { position: absolute; top: 0; left: 0; width: 100%; text-align: center; transform: translateY(0); will-change: transform; }
+    .reel-num {
+      height: 80px; display: flex; align-items: center; justify-content: center;
+      font-family: "JetBrains Mono", monospace; font-size: 2.5rem; font-weight: 800;
+      color: var(--pp-accent1); text-shadow: 0 0 10px var(--pp-accent1);
     }
-    .stat-row {
-      display: flex;
-      justify-content: space-between;
-      font-size: 0.85rem;
-      margin-bottom: 4px;
-      color: var(--pp-muted);
-    }
-    .stat-row strong {
-      color: var(--pp-text);
-    }
-    .bank {
-      font-family: "JetBrains Mono", ui-monospace, monospace;
-      font-size: 0.9rem;
-    }
-    .hint {
-      font-size: 0.8rem;
-      color: var(--pp-muted);
-      margin-top: 6px;
-    }
-    .claim-block { margin-top: 12px; }
-#leaderboardList{ list-style:none; padding:0; margin:0; }
-#leaderboardList li{ display:flex; align-items:center; gap:.75rem; padding:.25rem 0; }
-#leaderboardList .who{ min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-#leaderboardList .pts{ margin-left:auto; }
-#leaderboardList li.you{ font-weight:700; }
-.hud {
-  display: grid;
-  grid-template-columns: 2fr 1fr;
-  gap: 12px;
-}
-.panel-table { grid-column: 1 / 2; }
-.panel-claim { grid-column: 2 / 3; }
-
-@media (max-width: 1024px) {
-  .hud { grid-template-columns: 1fr; }
-  .panel-table, .panel-claim { grid-column: 1 / -1; }  /* <— ensures stacking */
-}
-.hidden { display: none !important; }
-@property --spin { syntax: "<angle>"; inherits: false; initial-value: 0deg; }
-
-/* Base look for the payout chip */
-#payoutTotal{
-  display: inline-block;
-  padding: 6px 10px;
-  border-radius: 12px;
-  position: relative;
-  background: #0f1425;
-  border: 1px solid rgba(58,245,217,.35);
-  transition: transform .15s ease, box-shadow .15s ease, filter .15s ease;
-}
-
-/* Win pulse: rainbow border + neon glow + bounce */
-#payoutTotal.payout-pulse{
-  border: 2px solid transparent;
-  background:
-    linear-gradient(#0f1425, #0f1425) padding-box,
-    conic-gradient(from var(--spin),
-      #00ffc6, #ffcc00, #ff3df7, #6ae3ff, #00ffc6) border-box;
-  color: #ffffff;
-  text-shadow:
-    0 0 6px #00ffc6,
-    0 0 10px #ff3df7,
-    0 0 16px #ffcc00;
-  box-shadow:
-    0 0 18px rgba(0,255,198,.35),
-    0 0 28px rgba(255,61,247,.25),
-    0 0 40px rgba(255,204,0,.18);
-  animation:
-    payoutBounce .9s cubic-bezier(.2,1.4,.2,1) 1,
-    payoutGlow .9s ease-out 1,
-    payoutSpin 1.2s linear 1;
-  will-change: transform, box-shadow, filter;
-}
-
-@keyframes payoutBounce{
-  0%   { transform: scale(1); }
-  35%  { transform: scale(1.18) rotate(-0.8deg); }
-  65%  { transform: scale(1.10) rotate(0.6deg); }
-  100% { transform: scale(1); }
-}
-
-@keyframes payoutGlow{
-  0%   { filter: saturate(1) brightness(1); }
-  40%  { filter: saturate(1.6) brightness(1.25); }
-  100% { filter: saturate(1) brightness(1); }
-}
-
-@keyframes payoutSpin{
-  to { --spin: 360deg; }
-}
-
-/* Respect reduced motion */
-@media (prefers-reduced-motion: reduce){
-  #payoutTotal.payout-pulse{
-    animation: none;
-    box-shadow: 0 0 18px rgba(0,255,198,.35);
-  }
-}[hidden] { display: none !important; }
-.loading { display: none !important; }     /* stays hidden until .show is added */
-.loading.show { display: block !important; }
-
-/* Visually hidden utility */
-.sr-only { 
-  position: absolute !important;
-  width: 1px; height: 1px; padding: 0; margin: -1px;
-  overflow: hidden; clip: rect(0,0,1px,1px); white-space: nowrap; border: 0;
-}
-
-    * { box-sizing: border-box; }
-    html, body { height: 100%; }
-    body {
-      margin: 0;
-      font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
-      background:
-        radial-gradient(1200px 800px at 50% -20%, #13203b 0%, #0b0f19 60%, #05070d 100%),
-        linear-gradient(180deg, #0b0f19 0%, #05070d 100%);
-      color: var(--text);
-      padding: 24px;
-    }
-  #toasts {
-    position: fixed; top: 12px; right: 12px; z-index: 9999;
-    display: flex; flex-direction: column; gap: 8px;
-    pointer-events: none;
-  }
-  .toast {
-    pointer-events: auto;
-    background: rgba(20,20,20,.92);
-    color: #fff; border-radius: 12px; padding: 10px 12px;
-    box-shadow: 0 8px 24px rgba(0,0,0,.25);
-    font: 600 14px system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
-    transform: translateY(-6px); opacity: 0;
-    transition: transform .18s ease-out, opacity .18s ease-out;
-    max-width: 320px; line-height: 1.25;
-    border-left: 4px solid #888;
-  }
-  .toast.show { transform: translateY(0); opacity: 1; }
-  .toast.hide { transform: translateX(8px); opacity: 0; }
-  .toast.win   { border-left-color: #22c55e; }  /* green */
-  .toast.bonus { border-left-color: #06b6d4; }  /* cyan  */
-  .toast.error { border-left-color: #ef4444; }  /* red   */
-
-  .toast .close {
-    float: right; margin-left: 8px; font-weight: 700; cursor: pointer; opacity: .7;
-  }
-  .toast .close:hover { opacity: 1; }
-
-  @media (prefers-reduced-motion: reduce) {
-    .toast, .toast.show, .toast.hide { transition: none; }
-  }
-    /* Header / Nav */
-    header { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin: 0 auto 16px; max-width: 1100px; }
-    .brand { display: flex; align-items: center; gap: 10px; letter-spacing: 0.5px; text-shadow: 0 0 10px rgba(0,255,198,0.6); }
-    .brand-badge {
-      width: 36px; height: 36px; border-radius: 10px; border: 2px solid var(--card-border);
-      box-shadow: 0 0 14px rgba(0,255,198,0.2); display: grid; place-items: center;
-      background: linear-gradient(180deg, rgba(255,255,255,0.06), rgba(255,255,255,0.02));
-      font-weight: 700; color: var(--accent);
-    }
-    nav { display: flex; gap: 10px; flex-wrap: wrap; }
-
-    .btn {
-      appearance: none; border: 0; cursor: pointer; padding: 10px 14px; border-radius: 12px;
-      color: #000; background: var(--accent); text-decoration: none;
-      box-shadow: 0 3px 0 #b59000, 0 0 12px rgba(255,204,0,0.35);
-      font-weight: 700; letter-spacing: .2px; display: inline-flex; align-items: center; gap: 8px;
-      transition: transform .06s ease, filter .12s ease, box-shadow .12s ease;
-      font-size: 12px;
-    }
-    .btn:hover { transform: translateY(-1px); filter: brightness(1.05); }
-    .btn:active { transform: translateY(1px); }
-    .btn:disabled { background: #555; color: #111; box-shadow: none; cursor: not-allowed; }
-    .btn:focus-visible { outline: 2px solid var(--accent-3); outline-offset: 2px; }
-    .btn-telegram{
-      background: var(--accent-3);
-      box-shadow: 0 3px 0 #2aa7bf, 0 0 14px rgba(106,227,255,0.35);
-      color: #021018;
-    }
-    .btn-primary{
-      border-radius: 999px;
-      border: none;
-      padding: 8px 16px;
-      font-size: 0.9rem;
-      font-weight: 600;
-      cursor: pointer;
-      display: inline-flex;
-      align-items: center;
-      gap: 8px;
-      background: linear-gradient(135deg, var(--pp-accent1), var(--pp-accent2));
-      color: #020617;
-      box-shadow: 0 10px 25px rgba(0,0,0,0.6);
-      transition: transform 80ms ease, box-shadow 80ms ease, opacity 80ms ease;
-    }
-    .btn-ghost{
-      background: linear-gradient(180deg, rgba(255,255,255,0.06), rgba(255,255,255,0.02));
-      color: var(--text);
-      border: 1px solid rgba(58,245,217,0.35);
-      box-shadow: 0 0 12px rgba(0,255,198,0.18) inset, 0 0 12px rgba(0,255,198,0.12);
+    .reel-num.is-zero { color: var(--accent); text-shadow: 0 0 15px var(--accent); }
+    .spinning .reel-strip { filter: blur(2px); }
+    .reel-overlay {
+      position: absolute; inset: 0;
+      background: linear-gradient(90deg, rgba(255,255,255,0) 0%, rgba(255,255,255,0.05) 20%, rgba(255,255,255,0) 40%, rgba(255,255,255,0) 100%);
+      pointer-events: none; z-index: 2; border-radius: 10px;
     }
 
-    /* Layout panels */
-    .wrap { 
-  max-width: 1100px; 
-  margin: 0 auto; 
-  width: 100%;   /* Ensures it takes full width */
-  flex: 1;       /* GROWS to fill space between header and footer */
-}
-
-/* Stack on tablets/phones */
-@media (max-width: 1024px) {
-  .hud { grid-template-columns: 1fr; }
-  .panel-table, .panel-claim { grid-column: 1; }
-}
-  .panel {
-  /* back to a normal card */
-  display: block;
-  background: linear-gradient(180deg, rgba(255,255,255,0.04), rgba(255,255,255,0.01));
-  border: 1px solid rgba(58,245,217,0.3);
-  border-radius: 16px;
-  padding: 16px;
-  backdrop-filter: blur(4px);
-  box-shadow: 0 0 24px rgba(0,255,198,0.06) inset, 0 0 24px rgba(0,255,198,0.08);
-}
-    .controls { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-top: 8px; }
-    /* Always hide elements with [hidden], and loaders by default */
-[hidden] { display: none !important; }
-.loading { display: none !important; }     /* stays hidden until .show is added */
-.loading.show { display: block !important; }
-
-/* Visually hidden utility */
-.sr-only { 
-  position: absolute !important;
-  width: 1px; height: 1px; padding: 0; margin: -1px;
-  overflow: hidden; clip: rect(0,0,1px,1px); white-space: nowrap; border: 0;
-}
-
-    * { box-sizing: border-box; }
-    html, body { height: 100%; }
-    body {
-      margin: 0;
-      font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
-      background:
-        radial-gradient(1200px 800px at 50% -20%, #13203b 0%, #0b0f19 60%, #05070d 100%),
-        linear-gradient(180deg, #0b0f19 0%, #05070d 100%);
-      color: var(--text);
-      padding: 24px;
+    /* Modals & Age Gate */
+    .smart-modal {
+      position: fixed; inset: 0; z-index: 10000;
+      display: grid; place-items: center;
+      background: rgba(5,7,13,.92); backdrop-filter: blur(5px);
+      opacity: 0; pointer-events: none; transition: opacity 0.2s;
     }
-  #toasts {
-    position: fixed; top: 12px; right: 12px; z-index: 9999;
-    display: flex; flex-direction: column; gap: 8px;
-    pointer-events: none;
-  }
-  .toast {
-    pointer-events: auto;
-    background: rgba(20,20,20,.92);
-    color: #fff; border-radius: 12px; padding: 10px 12px;
-    box-shadow: 0 8px 24px rgba(0,0,0,.25);
-    font: 600 14px system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
-    transform: translateY(-6px); opacity: 0;
-    transition: transform .18s ease-out, opacity .18s ease-out;
-    max-width: 320px; line-height: 1.25;
-    border-left: 4px solid #888;
-  }
-  .toast.show { transform: translateY(0); opacity: 1; }
-  .toast.hide { transform: translateX(8px); opacity: 0; }
-  .toast.win   { border-left-color: #22c55e; }  /* green */
-  .toast.bonus { border-left-color: #06b6d4; }  /* cyan  */
-  .toast.error { border-left-color: #ef4444; }  /* red   */
-
-  .toast .close {
-    float: right; margin-left: 8px; font-weight: 700; cursor: pointer; opacity: .7;
-  }
-  .toast .close:hover { opacity: 1; }
-
-  @media (prefers-reduced-motion: reduce) {
-    .toast, .toast.show, .toast.hide { transition: none; }
-  }
-    /* Header / Nav */
-    header { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin: 0 auto 16px; max-width: 1100px; }
-    .brand { display: flex; align-items: center; gap: 10px; letter-spacing: 0.5px; text-shadow: 0 0 10px rgba(0,255,198,0.6); }
-    .brand-badge {
-      width: 36px; height: 36px; border-radius: 10px; border: 2px solid var(--card-border);
-      box-shadow: 0 0 14px rgba(0,255,198,0.2); display: grid; place-items: center;
-      background: linear-gradient(180deg, rgba(255,255,255,0.06), rgba(255,255,255,0.02));
-      font-weight: 700; color: var(--accent);
+    .smart-modal.active { opacity: 1; pointer-events: auto; }
+    .smart-modal-card {
+      width: min(90vw, 500px);
+      background: var(--panel, #111827);
+      border: 1px solid var(--card-border, #3af5d9);
+      box-shadow: 0 0 40px rgba(0,255,198,0.15);
+      border-radius: 16px; overflow: hidden;
+      transform: translateY(10px); transition: transform 0.2s;
+      display: flex; flex-direction: column;
     }
-    nav { display: flex; gap: 10px; flex-wrap: wrap; }
-
-    .btn {
-      appearance: none; border: 0; cursor: pointer; padding: 10px 14px; border-radius: 12px;
-      color: #000; background: var(--accent); text-decoration: none;
-      box-shadow: 0 3px 0 #b59000, 0 0 12px rgba(255,204,0,0.35);
-      font-weight: 700; letter-spacing: .2px; display: inline-flex; align-items: center; gap: 8px;
-      transition: transform .06s ease, filter .12s ease, box-shadow .12s ease;
-      font-size: 12px;
+    .smart-modal.active .smart-modal-card { transform: translateY(0); }
+    .smart-modal-header {
+      background: rgba(255,255,255,0.03); padding: 16px 20px;
+      border-bottom: 1px solid rgba(58,245,217,0.2);
+      display: flex; justify-content: space-between; align-items: center;
     }
-    .btn:hover { transform: translateY(-1px); filter: brightness(1.05); }
-    .btn:active { transform: translateY(1px); }
-    .btn:disabled { background: #555; color: #111; box-shadow: none; cursor: not-allowed; }
-    .btn:focus-visible { outline: 2px solid var(--accent-3); outline-offset: 2px; }
-    .btn-telegram{
-      background: var(--accent-3);
-      box-shadow: 0 3px 0 #2aa7bf, 0 0 14px rgba(106,227,255,0.35);
-      color: #021018;
+    .smart-modal-header h2 { margin: 0; font-size: 1.2rem; color: var(--accent, #ffcc00); }
+    .smart-modal-close { background: none; border: none; color: var(--text-dim, #7fffe6); font-size: 1.5rem; cursor: pointer; line-height: 1; }
+    .smart-modal-body { padding: 20px; color: var(--text, #00ffc6); font-size: 0.95rem; line-height: 1.6; }
+    .smart-modal-footer {
+      padding: 16px 20px; border-top: 1px solid rgba(58,245,217,0.1);
+      display: flex; justify-content: flex-end; gap: 10px;
+      background: rgba(0,0,0,0.2);
     }
-    .btn-primary{
-      border-radius: 999px;
-      border: none;
-      padding: 8px 16px;
-      font-size: 0.9rem;
-      font-weight: 600;
-      cursor: pointer;
-      display: inline-flex;
-      align-items: center;
-      gap: 8px;
-      background: linear-gradient(135deg, var(--pp-accent1), var(--pp-accent2));
-      color: #020617;
-      box-shadow: 0 10px 25px rgba(0,0,0,0.6);
-      transition: transform 80ms ease, box-shadow 80ms ease, opacity 80ms ease;
-    }
-    .btn-ghost{
-      background: linear-gradient(180deg, rgba(255,255,255,0.06), rgba(255,255,255,0.02));
-      color: var(--text);
-      border: 1px solid rgba(58,245,217,0.35);
-      box-shadow: 0 0 12px rgba(0,255,198,0.18) inset, 0 0 12px rgba(0,255,198,0.12);
-    }
-
-    /* Layout panels */
-    .wrap { max-width: 1100px; margin: 0 auto; }
-
-/* Stack on tablets/phones */
-@media (max-width: 1024px) {
-  .hud { grid-template-columns: 1fr; }
-  .panel-table, .panel-claim { grid-column: 1; }
-}
-  .panel {
-  /* back to a normal card */
-  display: block;
-  background: linear-gradient(180deg, rgba(255,255,255,0.04), rgba(255,255,255,0.01));
-  border: 1px solid rgba(58,245,217,0.3);
-  border-radius: 16px;
-  padding: 16px;
-  backdrop-filter: blur(4px);
-  box-shadow: 0 0 24px rgba(0,255,198,0.06) inset, 0 0 24px rgba(0,255,198,0.08);
-}
-    .controls { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-top: 8px; }
-
-    .readout { color: var(--text-dim); font-size: 12px; margin: 4px 0; }
-    .card {cursor: pointer; user-select: none; }
-    /* Hand area (real cards + simulated placeholders share this) */
-    .card-hand {
-       
-       gap: var(--hand-gap);
-      display: flex;
-      flex-wrap: nowrap;
-      justify-content: center;
-      align-items: flex-start;
-      gap: 10px;
-      min-height: 170px;
-      margin: 12px auto 0;
-      max-width: 1100px;
-    }
-@keyframes pulse {
-  from { opacity: .75; transform: translateY(0); }
-  to   { opacity: 1;   transform: translateY(-1px); }
-}
-    /* Card visual */
-    /* Card + placeholder sizing and layout */
-.card, .placeholder {
- --_w: calc(var(--cardBaseW, var(--cardW)) * var(--ui-scale));
-  width: var(--_w);
-  height: calc(var(--_w) * var(--card-ratio)); 
-  border-radius: 10px;
-  background: var(--card-bg);
-  color: #fff;
-  border: 2px solid var(--card-border);
-  display: grid;
-  grid-template-rows: minmax(0, 1fr) auto auto; /* image shrinks first, label, then button */
-  align-items: center;
-  justify-items: center;
-  padding: 8px;
-  overflow: hidden;              /* keeps rounded corners clean */
-  position: relative;
-  text-align: center;
-  box-shadow: 0 0 20px rgba(0,255,198,0.1);
-}
-body.compact {
-  --hand-gap: 8px;
-}
-/* Dealing placeholders centered and unbroken */
-.placeholder {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-style: dashed;
-  font-size: 12px;
-  letter-spacing: .5px;
-  color: var(--text-dim);
-  animation: pulse .9s ease-in-out infinite alternate;
-  white-space: nowrap;           /* never break “Dealing...” into “...ling” */
-  padding: 0 6px;
-}
-.controls { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
-.controls .btn { flex: 1 1 180px; }
-  @media (max-width: 420px) {
-  .controls .btn { flex: 1 1 48%; }
-}
-.card img {
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
-  display: block;
-}
-@media (max-width: 720px){
-  header { flex-direction: column; align-items: stretch; gap: 8px; }
-  nav { justify-content: center; }
-  .brand h1 { font-size: 1.35rem; }
-  body { padding: 12px; }
-}
-@keyframes pulse {
-  0% { transform:scale(1); }
-  30% { transform:scale(1.08); }
-  100% { transform:scale(1); }
-}
-.payout-pulse { animation: pulse 450ms ease-out; }
-
-
-/* 2-line clamp for long names like “Queen of Diamonds” */
-.card p {
-  margin: 4px 0 0 0;
-  font-size: 11px;
-  line-height: 1.05;
-  padding: 0 4px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;         /* clamp to 2 lines */
-  line-clamp: 2;                 /* standard property for compatibility */
-  -webkit-box-orient: vertical;
-}
-
-.card button {
-  display: none;
-  width: 100%;
-  min-height: 30px;              /* reliable tap target */
-  font-size: 11px;
-  padding: 6px 8px;
-  border-radius: 8px;
-  margin-top: 6px;
-  background: var(--accent-2);
-  color: #090014;
-  box-shadow: 0 2px 0 #a2259c, 0 0 10px rgba(255,61,247,0.35);
-}
-/* ===== New Smart Modal System ===== */
-.smart-modal {
-  position: fixed; inset: 0; z-index: 10000;
-  display: grid; place-items: center;
-  background: rgba(5,7,13,.92);
-  backdrop-filter: blur(5px);
-  opacity: 0; pointer-events: none; transition: opacity 0.2s;
-}
-.smart-modal.active { opacity: 1; pointer-events: auto; }
-
-.smart-modal-card {
-  width: min(90vw, 500px);
-  background: var(--panel, #111827);
-  border: 1px solid var(--card-border, #3af5d9);
-  box-shadow: 0 0 40px rgba(0,255,198,0.15);
-  border-radius: 16px;
-  overflow: hidden;
-  transform: translateY(10px); transition: transform 0.2s;
-  display: flex; flex-direction: column;
-}
-.smart-modal.active .smart-modal-card { transform: translateY(0); }
-
-.smart-modal-header {
-  background: rgba(255,255,255,0.03);
-  padding: 16px 20px;
-  border-bottom: 1px solid rgba(58,245,217,0.2);
-  display: flex; justify-content: space-between; align-items: center;
-}
-.smart-modal-header h2 { margin: 0; font-size: 1.2rem; color: var(--accent, #ffcc00); }
-.smart-modal-close {
-  background: none; border: none; color: var(--text-dim, #7fffe6);
-  font-size: 1.5rem; cursor: pointer; line-height: 1;
-}
-
-.smart-modal-body { padding: 20px; color: var(--text, #00ffc6); font-size: 0.95rem; line-height: 1.6; }
-.smart-modal-body p { margin: 0 0 12px; }
-.smart-modal-body strong { color: var(--accent-2, #ff3df7); }
-.smart-modal-body ul { padding-left: 20px; margin-bottom: 16px; color: var(--text-dim); }
-.smart-modal-body li { margin-bottom: 6px; }
-
-.smart-modal-footer {
-  padding: 16px 20px;
-  border-top: 1px solid rgba(58,245,217,0.1);
-  display: flex; justify-content: flex-end; gap: 10px;
-  background: rgba(0,0,0,0.2);
-}
-
-.address-box {
-  background: #000; border: 1px dashed var(--accent-3, #6ae3ff);
-  padding: 10px; border-radius: 8px; font-family: monospace;
-  font-size: 0.85rem; word-break: break-all; margin: 10px 0; color: #fff;
-  cursor: pointer; position: relative;
-}
-.address-box:active { opacity: 0.7; }
-.address-box::after {
-  content: 'Click to Copy'; position: absolute; top: -8px; right: 8px;
-  background: var(--accent-3); color: #000; font-size: 10px;
-  padding: 2px 6px; border-radius: 4px; font-weight: bold;
-}
-/* SAFE LAYOUT UPGRADE */
-@media (min-width: 1025px) {
-  .hud {
-    display: grid;
-    grid-template-columns: 2fr 1fr; /* Game Left, Claim Right */
-    gap: 20px;
-    align-items: start;
-  }
-  
-  /* Force the Game Panel to the left */
-  .panel-table { 
-    grid-column: 1 / 2; 
-  }
-  
-  /* Force the Claim/Leaderboard Panel to the right & sticky */
-  .panel-claim { 
-    grid-column: 2 / 3;
-    position: sticky;
-    top: 20px;
-    height: fit-content;
-  }
-}
-/* Held badge */
-.card.held::after {
-  content: 'HELD';
-  position: absolute;
-  top: 6px; left: 6px;
-  font-size: 10px;
-  padding: 2px 6px;
-  background: var(--accent);
-  color: #000;
-  border-radius: 6px;
-  box-shadow: 0 0 10px rgba(255,204,0,0.4);
-}
-/* Lightweight confetti (optional flair) */
-.fx-confetti{ position:fixed; inset:0; pointer-events:none; z-index:9999; overflow:hidden; }
-.fx-confetti i{
-  position:absolute; top:-12px; left: var(--x,50%);
-  width:8px; height:14px; border-radius:2px;
-  background: linear-gradient(var(--rot,0deg),
-              var(--win-pink), var(--win-gold), var(--win-cyan));
-  opacity:.95;
-  transform: rotate(var(--rot,0deg));
-  animation: arcade-confetti var(--dur,1200ms) ease-out forwards;
-}
-@keyframes arcade-confetti{
-  0%   { transform: translateY(-10px) rotate(var(--rot,0deg)); }
-  100% { transform: translateY(calc(100vh + 12px)) rotate(calc(var(--rot,0deg) + 260deg)); opacity:0; }
-}
-#payoutTotal{ position: relative; display:inline-block; border-radius:12px; padding:2px 6px; }
-
-/* One-shot bling class we add/remove from JS */
-.payout-win{
-  /* quick pop + glow + sheen */
-  animation:
-    arcade-pop .18s ease-out,
-    arcade-glow 1.2s ease-out;
-  filter: saturate(1.2);
-}
-
-/* Neon aura behind the text */
-.payout-win::before{
-  content:"";
-  position:absolute; inset:-8px;
-  border-radius:14px;
-  background: conic-gradient(from 0deg,
-    var(--win-pink), var(--win-gold), var(--win-cyan), var(--win-pink));
-  filter: blur(14px) opacity(.55);
-  z-index:-1;
-  animation: arcade-spin 1.1s ease-out both;
-}
-
-/* Shiny sweep across the text */
-.payout-win::after{
-  content:"";
-  position:absolute; inset:-2px;
-  border-radius:12px;
-  background:
-    linear-gradient(120deg,
-      rgba(255,255,255,0) 0%,
-      rgba(255,255,255,.25) 15%,
-      rgba(255,255,255,0) 32%);
-  transform: translateX(-140%);
-  animation: arcade-sheen .9s ease-out .06s forwards;
-  pointer-events:none;
-}
-
-@keyframes arcade-pop{
-  0% { transform: scale(1); }
-  70%{ transform: scale(1.08); }
-  100%{ transform: scale(1); }
-}
-@keyframes arcade-glow{
-  0%   { box-shadow: 0 0 0 rgba(0,0,0,0); }
-  45%  { box-shadow: 0 0 18px rgba(255,61,247,.25), 0 0 32px rgba(58,245,217,.18) inset; }
-  100% { box-shadow: 0 0 0 rgba(0,0,0,0); }
-}
-@keyframes arcade-spin{
-  from { transform: rotate(0deg) scale(1.02); }
-  to   { transform: rotate(120deg) scale(1); }
-}
-@keyframes arcade-sheen{
-  to { transform: translateX(140%); }
-}
-@media (max-width: 600px) {
-  .card, .placeholder { width: 80px; height: 138px; }
-  .card p { font-size: 10px; }
-  .card button { min-height: 28px; font-size: 10px; }
-  .card-hand { min-height: 140px; }
-}
-.callout{
-  margin: 8px 0 12px;
-  padding: 10px 12px;
-  border-radius: 12px;
-  background: linear-gradient(180deg, rgba(255,255,255,0.06), rgba(255,255,255,0.02));
-  border: 1px solid rgba(58,245,217,0.45);
-  box-shadow: 0 0 18px rgba(0,255,198,0.12) inset, 0 8px 22px rgba(0,0,0,0.25);
-  font-size: 13px; line-height: 1.25;
-}
-.callout strong{ color: var(--accent); margin-right: 6px; }
-.callout .close{
-  float: right; border: 0; background: transparent; color: var(--text);
-  font-weight: 800; cursor: pointer; opacity: .8;
-}
-.callout .close:hover{ opacity: 1; }
-
-/* Age gate: focus ring for accessibility */
-#ageGate :focus-visible { outline: 2px solid var(--accent-3); outline-offset: 2px; }
-
-/* Reduce panel text width for readability on narrow screens */
-@media (max-width: 420px){
-  #ageGate .brand h1{ font-size: 1.2rem; }
-}
-
-
-
-    h1 { margin: 0 0 10px; }
-        .faucet-form { display: grid; gap: 10px; }
     .field { display: grid; gap: 6px; }
     label { color: var(--text-dim); font-size: 14px; }
-    input[type="text"]{
+    input[type="text"], input[type="number"] {
       width: 100%; padding: 12px 14px; border-radius: 12px; border: 1px solid rgba(58,245,217,0.35);
       background: #0f1425; color: var(--text);
       box-shadow: inset 0 0 14px rgba(0,255,198,0.08);
     }
 
-    .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
-
-    .status {
-      padding: 10px 12px; border-radius: 12px;
-      background: #0f1425; border: 1px solid rgba(58,245,217,0.25);
-      color: var(--text-dim);
+    /* FX */
+    .fx-confetti{ position:fixed; inset:0; pointer-events:none; z-index:9999; overflow:hidden; }
+    .fx-confetti i{
+      position:absolute; top:-12px; left: var(--x,50%);
+      width:8px; height:14px; border-radius:2px;
+      background: linear-gradient(var(--rot,0deg), var(--win-pink), var(--win-gold), var(--win-cyan));
+      opacity:.95;
+      transform: rotate(var(--rot,0deg));
+      animation: arcade-confetti var(--dur,1200ms) ease-out forwards;
     }
-    .status.ok { border-color: rgba(69,255,153,0.6); color: var(--ok); }
-    .status.err { border-color: rgba(255,85,119,0.65); color: var(--danger); }
+    @keyframes arcade-confetti{
+      0%   { transform: translateY(-10px) rotate(var(--rot,0deg)); }
+      100% { transform: translateY(calc(100vh + 12px)) rotate(calc(var(--rot,0deg) + 260deg)); opacity:0; }
+    }
+    
+    /* Payout Chip */
+    #payoutTotal{ position: relative; display:inline-block; border-radius:12px; padding:2px 6px; }
+    .payout-win{ animation: arcade-pop .18s ease-out, arcade-glow 1.2s ease-out; filter: saturate(1.2); }
+    .payout-win::before{
+      content:""; position:absolute; inset:-8px; border-radius:14px;
+      background: conic-gradient(from 0deg, var(--win-pink), var(--win-gold), var(--win-cyan), var(--win-pink));
+      filter: blur(14px) opacity(.55); z-index:-1; animation: arcade-spin 1.1s ease-out both;
+    }
+    .payout-win::after{
+      content:""; position:absolute; inset:-2px; border-radius:12px;
+      background: linear-gradient(120deg, rgba(255,255,255,0) 0%, rgba(255,255,255,.25) 15%, rgba(255,255,255,0) 32%);
+      transform: translateX(-140%); animation: arcade-sheen .9s ease-out .06s forwards; pointer-events:none;
+    }
+    @keyframes arcade-pop{ 0% { transform: scale(1); } 70%{ transform: scale(1.08); } 100%{ transform: scale(1); } }
+    @keyframes arcade-glow{ 0% { box-shadow: 0 0 0 rgba(0,0,0,0); } 45% { box-shadow: 0 0 18px rgba(255,61,247,.25), 0 0 32px rgba(58,245,217,.18) inset; } 100% { box-shadow: 0 0 0 rgba(0,0,0,0); } }
+    @keyframes arcade-spin{ from { transform: rotate(0deg) scale(1.02); } to { transform: rotate(120deg) scale(1); } }
+    @keyframes arcade-sheen{ to { transform: translateX(140%); } }
+    
+    /* Controls Area */
+    .controls { margin-top: 14px; display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: center; }
 
-    footer { opacity: .9; color: var(--text-dim); font-size: 12px; text-align: center; padding: 14px 0 6px; }
-
-.card-hand {
-  min-height: 220px;
-  margin-top: 16px;
-}
-@media (min-width: 900px) {
-  .card, .placeholder { width: 120px; height: 196px; }
-  .card-hand { min-height: 240px; }
-}
-/* Keep claim pieces tidy */
-.claim-block { margin-top: 12px; }
-#leaderboardList{ list-style:none; padding:0; margin:0; }
-#leaderboardList li{ display:flex; align-items:center; gap:.75rem; padding:.25rem 0; }
-#leaderboardList .who{ min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-#leaderboardList .pts{ margin-left:auto; }
-#leaderboardList li.you{ font-weight:700; }
-.hud {
-  display: grid;
-  grid-template-columns: 2fr 1fr;
-  gap: 12px;
-}
-.panel-table { grid-column: 1 / 2; }
-.panel-claim { grid-column: 2 / 3; }
-
-@media (max-width: 1024px) {
-  .hud { grid-template-columns: 1fr; }
-  .panel-table, .panel-claim { grid-column: 1 / -1; }  /* <— ensures stacking */
-}
-.hidden { display: none !important; }
-@property --spin { syntax: "<angle>"; inherits: false; initial-value: 0deg; }
-
-/* Base look for the payout chip */
-#payoutTotal{
-  display: inline-block;
-  padding: 6px 10px;
-  border-radius: 12px;
-  position: relative;
-  background: #0f1425;
-  border: 1px solid rgba(58,245,217,.35);
-  transition: transform .15s ease, box-shadow .15s ease, filter .15s ease;
-}
-
-/* Win pulse: rainbow border + neon glow + bounce */
-#payoutTotal.payout-pulse{
-  border: 2px solid transparent;
-  background:
-    linear-gradient(#0f1425, #0f1425) padding-box,
-    conic-gradient(from var(--spin),
-      #00ffc6, #ffcc00, #ff3df7, #6ae3ff, #00ffc6) border-box;
-  color: #ffffff;
-  text-shadow:
-    0 0 6px #00ffc6,
-    0 0 10px #ff3df7,
-    0 0 16px #ffcc00;
-  box-shadow:
-    0 0 18px rgba(0,255,198,.35),
-    0 0 28px rgba(255,61,247,.25),
-    0 0 40px rgba(255,204,0,.18);
-  animation:
-    payoutBounce .9s cubic-bezier(.2,1.4,.2,1) 1,
-    payoutGlow .9s ease-out 1,
-    payoutSpin 1.2s linear 1;
-  will-change: transform, box-shadow, filter;
-}
-
-@keyframes payoutBounce{
-  0%   { transform: scale(1); }
-  35%  { transform: scale(1.18) rotate(-0.8deg); }
-  65%  { transform: scale(1.10) rotate(0.6deg); }
-  100% { transform: scale(1); }
-}
-
-@keyframes payoutGlow{
-  0%   { filter: saturate(1) brightness(1); }
-  40%  { filter: saturate(1.6) brightness(1.25); }
-  100% { filter: saturate(1) brightness(1); }
-}
-
-@keyframes payoutSpin{
-  to { --spin: 360deg; }
-}
-
-/* Respect reduced motion */
-@media (prefers-reduced-motion: reduce){
-  #payoutTotal.payout-pulse{
-    animation: none;
-    box-shadow: 0 0 18px rgba(0,255,198,.35);
-  }
-}
-/* CONTAINER FOR THE 4 REELS */
-.dice-display {
-  display: flex;
-  justify-content: center;
-  gap: 12px;
-  margin: 20px 0;
-  perspective: 1000px;
-}
-
-/* INDIVIDUAL REEL / TUBE */
-.reel-container {
-  width: 60px;
-  height: 80px;
-  background: #05070d;
-  border: 2px solid var(--card-border); /* Matches your card borders */
-  border-radius: 12px;
-  overflow: hidden;
-  position: relative;
-  box-shadow: 
-    inset 0 0 15px rgba(0,0,0,0.8),
-    0 0 10px rgba(58,245,217,0.2);
-}
-
-/* THE STRIP OF NUMBERS INSIDE THE REEL */
-.reel-strip {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  text-align: center;
-  /* Will be animated via JS */
-  transform: translateY(0); 
-  will-change: transform;
-}
-
-/* INDIVIDUAL NUMBERS ON THE STRIP */
-.reel-num {
-  height: 80px; /* Must match reel-container height */
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-family: "JetBrains Mono", monospace;
-  font-size: 2.5rem;
-  font-weight: 800;
-  color: var(--pp-accent1);
-  text-shadow: 0 0 10px var(--pp-accent1);
-}
-
-/* "ZERO" SPECIAL BRANDING */
-/* When the number is 0, we can add a specific class or style */
-.reel-num.is-zero {
-  color: var(--accent); /* Gold for 0 */
-  text-shadow: 0 0 15px var(--accent);
-}
-
-/* BLUR FILTER FOR SPINNING EFFECT */
-.spinning .reel-strip {
-  filter: blur(2px);
-}
-
-/* GLASS HIGHLIGHT OVERLAY (The shiny reflection) */
-.reel-overlay {
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(
-    90deg, 
-    rgba(255,255,255,0) 0%, 
-    rgba(255,255,255,0.05) 20%, 
-    rgba(255,255,255,0) 40%, 
-    rgba(255,255,255,0) 100%
-  );
-  pointer-events: none;
-  z-index: 2;
-  border-radius: 10px;
-}
+    /* Leaderboard */
+    #leaderboardList{ list-style:none; padding:0; margin:0; }
+    #leaderboardList li{ display:flex; align-items:center; gap:.75rem; padding:.25rem 0; }
+    #leaderboardList .who{ min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    #leaderboardList .pts{ margin-left:auto; }
+    #leaderboardList li.you{ font-weight:700; }
   </style>
 </head>
-  
-  <script>
-  function fitHandToWidth() {
-    const hand = document.getElementById('hand');
-    if (!hand) return;
-
-    // How wide is the hand area?
-    const styles = getComputedStyle(hand);
-    const gap = parseFloat(styles.gap || styles.columnGap || 10) || 10;
-    const cards = 5, gaps = cards - 1;
-
-    const available = hand.clientWidth; // visible width
-    // space for 5 cards + 4 gaps
-    const perCard = (available - gap * gaps) / cards;
-
-    // clamp so it looks good everywhere
-    const cardW = Math.max(58, Math.min(perCard, 130));
-
-    document.documentElement.style.setProperty('--cardW', cardW + 'px');
-  }
-
-  addEventListener('load', fitHandToWidth);
-  addEventListener('resize', fitHandToWidth);
-  function enterSite() {
-    localStorage.setItem('ageVerified', 'true');
-    document.getElementById('ageGate').style.display = 'none';
-  }
-  window.addEventListener('load', () => {
-    if (localStorage.getItem('ageVerified') === 'true') {
-      document.getElementById('ageGate').style.display = 'none';
-    }
-  });
-</script>
-<div id="cookieBar" class="cookie-bar" role="region" aria-label="Cookie notice" hidden>
-  <span>
-    PixelPup Poker uses cookies & session storage to keep you logged in and prevent abuse.
-    By continuing, you agree to our <a href="privacy.html">Privacy Policy</a>.
-  </span>
-  <button id="cookieAccept" class="btn">Accept</button>
-</div>
-<script>
-(function () {
-  const KEY = 'kk_cookie_consent_v1';
-  function initCookieBar(){
-    const bar = document.getElementById('cookieBar');
-    const btn = document.getElementById('cookieAccept');
-    if (!bar || !btn) return;
-    try {
-      if (localStorage.getItem(KEY) === 'true') return;
-      bar.hidden = false;
-      btn.addEventListener('click', () => {
-        localStorage.setItem(KEY, 'true');
-        bar.hidden = true;
-      });
-    } catch {
-      bar.hidden = false;
-      btn.addEventListener('click', () => bar.hidden = true);
-    }
-  }
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', initCookieBar);
-  } else {
-    initCookieBar();
-  }
-})();
-</script>
-
- 
-
-</style>
 <body>
-<!-- Themed Age Gate Overlay -->
-<div id="ageGate"
-     role="dialog"
-     aria-labelledby="ageTitle"
-     aria-describedby="ageDesc"
-     aria-modal="true"
-     style="position:fixed; inset:0; z-index:9999; display:none;">
-  <!-- Backdrop -->
-  <div class="age-backdrop" style="position:absolute; inset:0;
-    background:
-      radial-gradient(1200px 800px at 50% -20%, #13203b 0%, #0b0f19 60%, #05070d 100%),
-      linear-gradient(180deg, #0b0f19 0%, #05070d 100%);
-    opacity:.98;"></div>
 
-  <!-- Centered panel (NOTE: inside #ageGate) -->
+<!-- Themed Age Gate Overlay -->
+<div id="ageGate" role="dialog" aria-labelledby="ageTitle" aria-describedby="ageDesc" aria-modal="true" style="position:fixed; inset:0; z-index:9999; display:none;">
+  <div class="age-backdrop" style="position:absolute; inset:0; background: radial-gradient(1200px 800px at 50% -20%, #13203b 0%, #0b0f19 60%, #05070d 100%), linear-gradient(180deg, #0b0f19 0%, #05070d 100%); opacity:.98;"></div>
   <div class="age-wrap" style="position:relative; height:100%; display:flex; align-items:center; justify-content:center; padding:24px;">
     <div class="panel" style="max-width:560px; width:100%; text-align:center;">
       <div class="brand" style="justify-content:center; margin-bottom:8px;">
         <div class="brand-badge">KK</div>
         <h1 id="ageTitle" style="margin:0;">PixelPup Poker Alpha</h1>
       </div>
-
-      <p id="ageDesc" class="readout" style="margin:6px 0 16px;">
-        You must be <strong>18 or older</strong> to participate in this alpha test.
-      </p>
-
+      <p id="ageDesc" class="readout" style="margin:6px 0 16px;">You must be <strong>18 or older</strong> to participate in this alpha test.</p>
       <div class="panel" style="margin: 12px 0;">
-        <p class="readout" style="margin:6px 0;">
-          This is a free alpha test. No real money. Tokens have no monetary value.
-        </p>
-        <p class="readout" style="margin:6px 0;">
-          See our <a href="disclaimer.html">Disclaimer</a>, <a href="tos.html">Terms</a>, and <a href="privacy.html">Privacy</a>.
-        </p>
+        <p class="readout" style="margin:6px 0;">This is a free alpha test. No real money. Tokens have no monetary value.</p>
+        <p class="readout" style="margin:6px 0;">See our <a href="disclaimer.html">Disclaimer</a>, <a href="tos.html">Terms</a>, and <a href="privacy.html">Privacy</a>.</p>
       </div>
-
       <div class="controls" style="margin-top:12px;">
-        <button id="ageConfirm" class="btn btn-primary" type="button" aria-label="I am 18 or older">I am 18+</button>
-        <a class="btn btn-ghost" href="https://www.google.com" aria-label="Exit site">Exit</a>
+        <button id="ageConfirm" class="btn btn-primary" type="button">I am 18+</button>
+        <a class="btn btn-ghost" href="https://www.google.com">Exit</a>
       </div>
-
       <label class="readout" style="display:inline-flex; gap:8px; align-items:center; margin-top:10px;">
-        <input id="ageRemember" type="checkbox" style="accent-color: var(--accent);" />
-        Remember this on this device
+        <input id="ageRemember" type="checkbox" style="accent-color: var(--accent);" /> Remember this on this device
       </label>
     </div>
   </div>
-
-  <noscript>
-    <div style="position:absolute;bottom:0;left:0;right:0;text-align:center;color:white;padding:8px;background:#111827;">
-      JavaScript is required to enter.
-    </div>
-  </noscript>
 </div>
 
-
-  <noscript>
-    <div style="position:absolute;bottom:0;left:0;right:0;text-align:center;color:white;padding:8px;background:#111827;">
-  
-    </div>
-  </noscript>
-</div>
-
-</div>
-
-   <header>
-    <nav>
-  <a class="btn btn-telegram" href="https://t.me/NexaKennelKlub" target="_blank" rel="noopener noreferrer">
-    <!-- Telegram SVG -->
-    <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" style="width:18px;height:18px;margin-right:6px;">
-      <path fill="#1C93E3" d="M12 0a12 12 0 1 0 0 24A12 12 0 0 0 12 0z"/>
-      <path fill="#fff" d="M17.9 7.4c.2-1-.8-1.3-1.6-1l-11 4.2c-.7.3-.7.8-.1 1l2.8.9 6.5-4.1c.3-.2.6-.1.4.1l-5.3 4.9-.2 3.1c.5 0 .7-.2 1-.5l1.7-1.6 2.6 1.9c.6.3 1 .1 1.1-.6l1.9-9.3z"/>
-    </svg>
-    Join Telegram
-  </a>
- <a class="btn btn-primary" href="play.html" style="font-size: 1.1rem; padding: 14px 24px;">
-        ♠️ Play Poker
-      </a>
-<a class="btn btn-primary" href="blackjack.html" style="font-size: 1.1rem; padding: 14px 24px;">
-        🃏 Play Blackjack
-      </a>
-      <a class="btn btn-ghost" href="/"              class="kk-home" aria-label="Go to Home">🏠 Home</a>
-     
+<header>
+  <nav>
+    <a class="btn btn-telegram" href="https://t.me/NexaKennelKlub" target="_blank" rel="noopener noreferrer">
+      <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" style="width:18px;height:18px;margin-right:6px;">
+        <path fill="#1C93E3" d="M12 0a12 12 0 1 0 0 24A12 12 0 0 0 12 0z"/>
+        <path fill="#fff" d="M17.9 7.4c.2-1-.8-1.3-1.6-1l-11 4.2c-.7.3-.7.8-.1 1l2.8.9 6.5-4.1c.3-.2.6-.1.4.1l-5.3 4.9-.2 3.1c.5 0 .7-.2 1-.5l1.7-1.6 2.6 1.9c.6.3 1 .1 1.1-.6l1.9-9.3z"/>
+      </svg>
+      Join Telegram
+    </a>
+    <a class="btn btn-primary" href="play.html" style="font-size: 1.1rem; padding: 14px 24px;">♠️ Play Poker</a>
+    <a class="btn btn-primary" href="blackjack.html" style="font-size: 1.1rem; padding: 14px 24px;">🃏 Play Blackjack</a>
+    <a class="btn btn-ghost" href="/" aria-label="Go to Home">🏠 Home</a>
     <a id="navConnect" class="btn btn-ghost" href="/connect.html" aria-current="page">Connect Wallet</a>
-
-</nav>
-    <div class="brand">
-      <div class="brand-badge">KK</div>
-      <h1>PixelPup Dice 🎲</h1>
-    </div>
-  </header>
-  
-    <div class="wrap">
-    <!-- HUD -->
-    <div class="hud">
-      <div class="panel panel-table" id="game">
-  <div class="controls">
-    <span class="badge">🎄Christmas Season🎄</span>
+  </nav>
+  <div class="brand">
+    <div class="brand-badge">KK</div>
+    <h1>PixelPup Dice 🎲</h1>
   </div>
-  <p class="subtitle">Roll under the target. Higher risk, higher KIBL. All rolls are provably fair (commit–reveal).</p>
+</header>
 
-  <div class="dice-main">
-    <div id="selectedTierLabel" style="font-size:0.8rem;color:var(--pp-muted);text-transform:uppercase;letter-spacing:.08em;">
-      Select your risk tier:
-    </div>
-
-    <div id="tierList" class="tier-list"></div>
-
-    <div class="dice-display" id="diceReels">
-      <div class="reel-container">
-        <div class="reel-strip" data-val="0">
-          <div class="reel-num">-</div>
-        </div>
-        <div class="reel-overlay"></div>
+<div class="wrap">
+  <div class="hud">
+    <!-- LEFT PANEL: GAME -->
+    <div class="panel panel-table" id="game">
+      <div class="controls">
+        <span class="badge">🎄Christmas Season🎄</span>
       </div>
-      <div class="reel-container">
-        <div class="reel-strip" data-val="0">
-          <div class="reel-num">-</div>
-        </div>
-        <div class="reel-overlay"></div>
-      </div>
-      <div class="reel-container">
-        <div class="reel-strip" data-val="0">
-          <div class="reel-num">-</div>
-        </div>
-        <div class="reel-overlay"></div>
-      </div>
-      <div class="reel-container">
-        <div class="reel-strip" data-val="0">
-          <div class="reel-num">-</div>
-        </div>
-        <div class="reel-overlay"></div>
-      </div>
-    </div>
+      <p class="subtitle">Roll under the target. Higher risk, higher KIBL. All rolls are provably fair (commit–reveal).</p>
 
-    <div class="result">
-      <div id="resultStatus" style="text-align:center; min-height: 20px;"></div>
-    </div>
-
-    <div class="controls">
-      <button id="betBtn"><span>Place 100 KIBL Bet</span></button>
-      <button id="rollBtn" disabled><span>Roll Dice</span></button>
-      <button id="changeTargetBtn" class="btn-secondary" disabled>Change Target</button>
-      <button id="fairBtn" class="btn-secondary" disabled>Fairness</button>
-    </div>
-    
-    <div class="hint">
-      100 KIBL is sent on-chain to the PixelPup house wallet. Winnings accrue to your in-app KIBL bank for payouts.
-    </div>
-  </div> <div style="margin-top: 20px; padding: 12px; background: rgba(0,0,0,0.3); border-radius: 12px;">
-    <p id="payoutTotal" style="margin:0 0 4px; color: var(--accent);">Total Payout: 0 KIBL</p>
-    <div style="display:flex; gap: 16px; font-family: monospace; color: var(--text-dim);">
-      <span id="kiblBalance">KIBL: —</span>
-      <span id="nexaBalance">NEXA: —</span>
-    </div>
-  </div>
-
-  <button id="depositBtn" class="btn btn-ghost" style="display:none; font-size:12px; margin-top: 10px; width:100%;">
-    ⬇️ Show Deposit Address
-  </button>
-  <button id="openSendBtn" class="btn btn-ghost">💸 Send Funds</button>
-
-  <div id="sendModal" class="smart-modal" hidden>
-    <div class="smart-modal-card">
-      <div class="smart-modal-header">
-        <h2>Send Funds</h2>
-        <button class="smart-modal-close">×</button>
-      </div>
-
-      <div class="smart-modal-body">
-        <div class="field">
-          <label>Recipient Address</label>
-          <input type="text" id="sendAddr" list="addrHistory" placeholder="nexa:nqtsq..." autocomplete="off" />
-          <datalist id="addrHistory"></datalist>
+      <div class="dice-main">
+        <div id="selectedTierLabel" style="font-size:0.8rem;color:var(--pp-muted);text-transform:uppercase;letter-spacing:.08em;">
+          Select your risk tier:
         </div>
 
-        <div class="field" style="margin-top:10px;">
-          <label>Amount KIBL <span style="font-size:10px; opacity:0.6;">(2 decimals)</span></label>
-          <input type="number" id="sendKibl" step="0.01" min="0.01" placeholder="0.00" />
-          <p class="readout" style="font-size:10px; margin:2px 0 0;">
-            Min: 0.01 KIBL
-          </p>
+        <div id="tierList" class="tier-list"></div>
+
+        <div class="dice-display" id="diceReels">
+          <div class="reel-container"><div class="reel-strip" data-val="0"><div class="reel-num">-</div></div><div class="reel-overlay"></div></div>
+          <div class="reel-container"><div class="reel-strip" data-val="0"><div class="reel-num">-</div></div><div class="reel-overlay"></div></div>
+          <div class="reel-container"><div class="reel-strip" data-val="0"><div class="reel-num">-</div></div><div class="reel-overlay"></div></div>
+          <div class="reel-container"><div class="reel-strip" data-val="0"><div class="reel-num">-</div></div><div class="reel-overlay"></div></div>
         </div>
 
-        <div class="field" style="margin-top:10px;">
-          <label>Amount NEXA <span style="font-size:10px; opacity:0.6;">(2 decimals)</span></label>
-          <input type="number" id="sendNexa" step="0.01" min="6.00" placeholder="0.00" />
-          <p class="readout" style="font-size:10px; margin:2px 0 0;">
-            Min: 6.00 NEXA (Dust limit)
-          </p>
+        <div class="result">
+          <div id="resultStatus" style="text-align:center; min-height: 20px;"></div>
+        </div>
+
+        <div class="controls">
+          <button id="betBtn" class="btn btn-primary"><span>Place 100 KIBL Bet</span></button>
+          <button id="rollBtn" class="btn btn-primary" disabled><span>Roll Dice</span></button>
+          <button id="changeTargetBtn" class="btn btn-secondary" disabled>Change Target</button>
+          <button id="fairBtn" class="btn btn-secondary" disabled>Fairness</button>
+        </div>
+        
+        <div class="hint">
+          100 KIBL is sent on-chain to the PixelPup house wallet. Winnings accrue to your in-app KIBL bank for payouts.
         </div>
       </div>
 
-      <div class="smart-modal-footer">
-        <button class="btn btn-primary" id="confirmSend">Confirm Send</button>
+      <div style="margin-top: 20px; padding: 12px; background: rgba(0,0,0,0.3); border-radius: 12px;">
+        <p id="payoutTotal" style="margin:0 0 4px; color: var(--accent);">Total Payout: 0 KIBL</p>
+        <div style="display:flex; gap: 16px; font-family: monospace; color: var(--text-dim);">
+          <span id="kiblBalance">KIBL: —</span>
+          <span id="nexaBalance">NEXA: —</span>
+        </div>
+      </div>
+
+      <button id="depositBtn" class="btn btn-ghost" style="display:none; font-size:12px; margin-top: 10px; width:100%;">
+        ⬇️ Show Deposit Address
+      </button>
+      <button id="openSendBtn" class="btn btn-ghost">💸 Send Funds</button>
+
+      <!-- SEND MODAL -->
+      <div id="sendModal" class="smart-modal" hidden>
+        <div class="smart-modal-card">
+          <div class="smart-modal-header">
+            <h2>Send Funds</h2>
+            <button class="smart-modal-close">×</button>
+          </div>
+          <div class="smart-modal-body">
+            <div class="field">
+              <label>Recipient Address</label>
+              <input type="text" id="sendAddr" list="addrHistory" placeholder="nexa:nqtsq..." autocomplete="off" />
+              <datalist id="addrHistory"></datalist>
+            </div>
+            <div class="field" style="margin-top:10px;">
+              <label>Amount KIBL <span style="font-size:10px; opacity:0.6;">(2 decimals)</span></label>
+              <input type="number" id="sendKibl" step="0.01" min="0.01" placeholder="0.00" />
+              <p class="readout" style="font-size:10px; margin:2px 0 0;">Min: 0.01 KIBL</p>
+            </div>
+            <div class="field" style="margin-top:10px;">
+              <label>Amount NEXA <span style="font-size:10px; opacity:0.6;">(2 decimals)</span></label>
+              <input type="number" id="sendNexa" step="0.01" min="6.00" placeholder="0.00" />
+              <p class="readout" style="font-size:10px; margin:2px 0 0;">Min: 6.00 NEXA (Dust limit)</p>
+            </div>
+          </div>
+          <div class="smart-modal-footer">
+            <button class="btn btn-primary" id="confirmSend">Confirm Send</button>
+          </div>
+        </div>
       </div>
     </div>
-  </div>
 
-
-
-      </div>     <!-- RIGHT SIDEBAR: TOTAL + CLAIM + DAILY -->
-  <div class="panel panel-claim">
-    <div class="controls">
-      <div class="panel" id="leaderboardPanel">
-  <h2>Season Points Window (Skill Points)</h2>
-  <ol id="leaderboardList" class="leaderboard"></ol>
-  <div class="readout" style="margin-top:6px;">
-   <a class="btn btn-ghost" href="/leaderboard.html?game=dice">See full leaderboard →</a>
-</div>
-</div>
-
-    </div>
-<section id="claim" class="claim-block">
-  <h2>Claim</h2>
-  
-    <div class="row">
-     <a href="claim.html?tab=daily" class="btn btn-ghost" style="text-align:center; text-decoration:none;">
-    🎁 Claim Daily Reward
-</a>
-       <a href="claim.html" class="btn btn-primary" style="width:100%; text-align:center; display:block; padding:12px;">
-          FEED ME! 🐾 (Withdraw)
-        </a>
-  <div id="backupSection" style="margin-top: 20px; border-top: 1px solid #333; padding-top: 20px; display: none;">
-  <h3>⚠️ Security Check</h3>
-  <p class="readout">If you clear your browser data, you will lose your funds.</p>
-  <button id="btnBackup" class="btn btn-ghost" style="border-color: #ff5577; color: #ff5577;">
-    Reveal Secret Recovery Phrase
-  </button>
-  </div>
-</div>
-</section>
-      
+    <!-- RIGHT SIDEBAR: CLAIM + LEADERBOARD -->
+    <div class="panel panel-claim">
+      <div class="controls">
+        <div class="panel" id="leaderboardPanel">
+          <h2>Season Points Window</h2>
+          <p id="userTag" class="readout" style="margin:0;"></p>
+          <ol id="leaderboardList" class="leaderboard"></ol>
+          <div class="readout" id="lbHint" style="margin-top:6px;"></div>
+          <div class="readout" style="margin-top:6px;">
+            <a class="btn btn-ghost" href="/leaderboard.html?game=dice">See full leaderboard →</a>
+          </div>
+        </div>
+      </div>
+      <section id="claim" class="claim-block">
+        <h2>Claim</h2>
+        <div class="row">
+          <a href="claim.html?tab=daily" class="btn btn-ghost" style="text-align:center; text-decoration:none;">🎁 Claim Daily Reward</a>
+          <a href="claim.html" class="btn btn-primary" style="width:100%; text-align:center; display:block; padding:12px;">FEED ME! 🐾 (Withdraw)</a>
+          <div id="backupSection" style="margin-top: 20px; border-top: 1px solid #333; padding-top: 20px; display: none;">
+            <h3>⚠️ Security Check</h3>
+            <p class="readout">If you clear your browser data, you will lose your funds.</p>
+            <button id="btnBackup" class="btn btn-ghost" style="border-color: #ff5577; color: #ff5577;">Reveal Secret Recovery Phrase</button>
+          </div>
+        </div>
+      </section>
     </div>
   </div>
 </div>
-      </div>
 
-      
-      <audio id="feedSound" src="dogfood.mp3" preload="auto"></audio>
-    </aside>
-  </main>
+<audio id="feedSound" src="dogfood.mp3" preload="auto"></audio>
 
-  <script>
-    document.addEventListener('DOMContentLoaded', async () => {
-  try {
-    await fetchCsrf();
-    await (window.loadProfile?.());
-    await (window.loadLeaderboard?.());
-  } catch {}
-});
-      // --- 2. STATE ---
+<script>
+  // --- CORE GAME STATE ---
   window.state = {
     csrf: null,
     linked: null,
     localWallet: false,
-     profile: null,
-      dice: {
-        handId: null,
-        commit: null,
-        tiers: [],
-        selectedTier: null,
-        fair: null,
-        mode: 'idle' // 'idle' | 'preRoll' | 'postRoll'
-      }
+    profile: null,
+    dice: {
+      handId: null,
+      commit: null,
+      tiers: [],
+      selectedTier: null,
+      fair: null,
+      mode: 'idle'
+    }
   };
 
-    const API = Object.freeze({
-  csrf: '/api/csrf',
-  start: '/api/start-hand',
-  deal: '/api/deal',
-  draw: '/api/draw',
-  profile: '/api/profile',
-  leaderboard: '/api/leaderboard',
-  daily: '/api/daily-reward',
-  payout: '/api/payout'
-});
+  window.KIBL_TOKEN_ID_HEX = "656bfefce8a0885acba5c809c5afcfbfa62589417d84d54108e6bb42a6f30000";
 
-const IDS = Object.freeze({
-  payout: 'payoutTotal',
-  achievements: 'achievements',
-  deal: 'deal',
-  draw: 'draw',
-  daily: 'dailyReward',
-  claimButton: 'ClaimPayout',
-  hand: 'hand',
-  address: 'addressInput',
-  loading: 'loading',
-  leaderboardList: 'leaderboardList'
-});
-async function fetchCsrf(){
-  const r = await fetch('/api/csrf', { credentials:'include' });
-  if (!r.ok) throw new Error('CSRF bootstrap failed');
-  const { csrfToken } = await r.json();
-  window.csrfToken = csrfToken; // <--- Save to window!
-}
+  // --- UI HELPERS ---
+  const payoutEl = document.getElementById('payoutTotal');
+  const feedSound = document.getElementById('feedSound');
+  let totalPayout = 0;
 
-const feedSound = document.getElementById('feedSound');
-const payoutEl       = document.getElementById(IDS.payout);
-const achievementsEl = document.getElementById(IDS.achievements);
-
-
-async function ensureCsrf() {
-  if (csrfToken) return csrfToken;
-  try {
-    const res = await fetch('/api/csrf', { credentials: 'include' });
-    if (!res.ok) throw new Error('csrf_fetch_failed');
-    const data = await res.json();
-    csrfToken = data.csrfToken;
-    return csrfToken;
-  } catch (e) {
-    console.error('CSRF error', e);
-    throw e;
-  }
-}
-function postWithCsrf(input, init = {}) {
-  const baseHeaders = init.headers ? {...init.headers} : {};
-  if (init.body && !baseHeaders['Content-Type']) baseHeaders['Content-Type'] = 'application/json';
-  const makeReq = async () => fetch(input, {
-    ...init,
-    method: init.method || 'POST',
-    credentials: 'include',
-    headers: { 'x-csrf-token': window.csrfToken, ...baseHeaders }
-  });
-  // 403 → refresh CSRF once
-  return (async () => {
-      let resp = await makeReq();
-      if (resp.status === 403) {
-      const data = await resp.clone().json().catch(()=> ({}));
-      if (data?.error === 'bad_csrf') { await fetchCsrf(); resp = await makeReq(); }
-    }
-    return resp;
-  })();
-}
-function confettiBurst(count = 48, ms = 1800){
-  const wrap = document.createElement('div');
-  wrap.className = 'fx-confetti';
-  document.body.appendChild(wrap);
-  for (let i=0;i<count;i++){
-    const s = document.createElement('i');
-    s.style.setProperty('--x', `${Math.random()*100}%`);
-    s.style.setProperty('--rot', `${Math.random()*360}deg`);
-    s.style.setProperty('--dur', `${1000 + Math.random()*700}ms`);
-    wrap.appendChild(s);
-  }
-  setTimeout(()=> wrap.remove(), ms + 300);
-}
-async function loadProfile() {
-  try {
-    const r = await fetch(API.profile, { credentials: 'include' });
-    const d = await r.json();
-    if (!d.ok) return;
-
-    state.profile = d;
-
-    // Bank / payout
-    const bankUnits = Math.floor((d.bank || 0) / 100);
-    totalPayout = bankUnits;
-    if (payoutEl) payoutEl.textContent = `Total Payout: ${bankUnits} KIBL`;
-    const payoutBtn = document.getElementById('payoutBtn');
-    if (payoutBtn) payoutBtn.disabled = (totalPayout === 0);
-
-    // Tag
-    const tagEl = document.getElementById('userTag');
-    if (tagEl && d.displayId) tagEl.textContent = `Your tag: ${d.displayId}`;
-
-    // Dice stats
-    const diceStats = d.stats?.dice || {};
-    const dicePtsEl = document.getElementById('dicePoints');
-    const diceWinsEl = document.getElementById('diceWins');
-    if (dicePtsEl)  dicePtsEl.textContent  = `Dice Points: ${diceStats.points ?? 0}`;
-    if (diceWinsEl) diceWinsEl.textContent = `Dice Wins: ${diceStats.wins ?? 0}`;
-
-    // Wallet balances if linked
-    if (d.linked?.address && window.loadWalletBalances) {
-      window.loadWalletBalances(d.linked.address);
-    }
-  } catch (e) {
-    console.error('loadProfile failed:', e);
-  }
-}
-async function loadLeaderboard() {
-  try {
-    // 1. Fetch the "Window" leaderboard (centered on you), just like Poker
-    const res = await fetch('/api/leaderboard/window?game=dice&k=3', { credentials: 'include' });
-    const d = await res.json();
-    if (!d.ok) return;
-
-    const list = document.getElementById('leaderboardList');
-    if (!list) return;
-    list.innerHTML = '';
-
-    // 2. Render the list items
-    d.window.forEach(row => {
-      const li = document.createElement('li');
-      li.innerHTML = `
-        <span class="who">${row.rank}. <span class="user">${row.user}${row.you ? ' (you)' : ''}</span></span>
-        <span class="pts">${row.points}</span>`;
-      if (row.you) li.classList.add('you');
-      list.appendChild(li);
-    });
-
-    // 3. Optional: Show "Next Rank" hint
-    let hint = document.getElementById('lbHint');
-    if (!hint) {
-      // Create hint element if missing
-      hint = document.createElement('div');
-      hint.id = 'lbHint';
-      hint.className = 'readout';
-      hint.style.marginTop = "6px";
-      list.parentNode.appendChild(hint);
-    }
-    hint.textContent = (d.you && d.you.deltaAhead != null)
-      ? `Only ${d.you.deltaAhead} pts to the next rank.`
-      : '';
-      
-  } catch (e) {
-    console.warn('Dice leaderboard failed', e);
-  }
-}
-// 1. SETUP REELS ON LOAD
-function initReels() {
-  const containers = document.querySelectorAll('.reel-container .reel-strip');
-  
-  containers.forEach(strip => {
-    // Fill the strip with numbers 0-9 repeated twice for smooth looping
-    let html = '';
-    // We create a "stack" of numbers. 
-    // Order: 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9
-    for(let i=0; i<20; i++) {
-      const num = i % 10;
-      // If it's 0, add the special class for branding
-      const zeroClass = (num === 0) ? 'is-zero' : '';
-      html += `<div class="reel-num ${zeroClass}">${num}</div>`;
-    }
-    strip.innerHTML = html;
-    // Set initial position to '0' (which is index 0)
-    strip.style.transform = `translateY(0px)`;
-  });
-}
-// Call this on window load
-window.addEventListener('load', initReels);
-
-
-// 2. THE ANIMATION FUNCTION
-async function animateReels(finalNumber) {
-  // finalNumber is a string like "5311" or number 5311
-  const sNum = finalNumber.toString().padStart(4, '0'); // ensure "0054"
-  const digits = sNum.split('').map(Number);
-  
-  const strips = document.querySelectorAll('.reel-strip');
-  const REEL_HEIGHT = 80; // px, matches css .reel-num height
-  
-  const promises = [];
-
-  strips.forEach((strip, i) => {
-    // Add 'spinning' class for blur effect
-    strip.parentElement.classList.add('spinning');
-    
-    // Calculate final position
-    // We want to land on the second set of 0-9 (indexes 10-19) to allow movement
-    const targetIndex = 10 + digits[i]; 
-    const targetPos = -(targetIndex * REEL_HEIGHT);
-    
-    // Stagger duration: Left reels stop first, right reels stop last
-    const duration = 1000 + (i * 300); 
-    
-    const p = new Promise(resolve => {
-      // 1. Reset to top (instant)
-      strip.style.transition = 'none';
-      strip.style.transform = 'translateY(0px)';
-      
-      // Force reflow
-      void strip.offsetWidth;
-      
-      // 2. Animate to target
-      strip.style.transition = `transform ${duration}ms cubic-bezier(0.15, 0.9, 0.35, 1)`;
-      strip.style.transform = `translateY(${targetPos}px)`;
-      
-      setTimeout(() => {
-        strip.parentElement.classList.remove('spinning');
-        resolve();
-      }, duration);
-    });
-    promises.push(p);
-  });
-  
-  return Promise.all(promises);
-}
-
-
-// 3. INTEGRATE INTO YOUR EXISTING 'handleRollClick' or 'rollDice' FLOW
-
-// ... inside handleRollClick, BEFORE calling API ...
-// Trigger a "fake" infinite spin loop if you want, 
-// OR just rely on the animation function once data arrives.
-
-// ... inside showRollResult(payload) ...
-
- function show(el){ el && (el.style.display = 'block'); }
-  function hide(el){ el && (el.style.display = 'none'); }
-  const wait = (ms) => new Promise(resolve => setTimeout(resolve, ms));
   function toast(html, { type = 'info', timeout = 2500 } = {}) {
     let root = document.getElementById('toasts');
     if (!root) {
@@ -1731,774 +523,402 @@ async function animateReels(finalNumber) {
     el.setAttribute('aria-live', 'polite');
     el.innerHTML = `<span class="close" aria-label="Dismiss">×</span>${html}`;
     root.appendChild(el);
-
-    // enter
     requestAnimationFrame(() => el.classList.add('show'));
-
-    // auto-dismiss
     const remove = () => {
       el.classList.remove('show');
       el.classList.add('hide');
       el.addEventListener('transitionend', () => el.remove(), { once: true });
     };
     const t = setTimeout(remove, timeout);
+    el.querySelector('.close').addEventListener('click', () => { clearTimeout(t); remove(); });
+    if (navigator.vibrate) navigator.vibrate(20);
+  }
 
-    // click to dismiss immediately
-    el.querySelector('.close').addEventListener('click', () => {
-      clearTimeout(t);
-      remove();
+  function flashPayout(){
+    if (!payoutEl) return;
+    payoutEl.classList.remove('payout-win');
+    void payoutEl.offsetWidth;
+    payoutEl.classList.add('payout-win');
+    setTimeout(() => payoutEl?.classList.remove('payout-win'), 1400);
+  }
+
+  function confettiBurst(count = 48, ms = 1800){
+    const wrap = document.createElement('div');
+    wrap.className = 'fx-confetti';
+    document.body.appendChild(wrap);
+    for (let i=0;i<count;i++){
+      const s = document.createElement('i');
+      s.style.setProperty('--x', `${Math.random()*100}%`);
+      s.style.setProperty('--rot', `${Math.random()*360}deg`);
+      s.style.setProperty('--dur', `${1000 + Math.random()*700}ms`);
+      wrap.appendChild(s);
+    }
+    setTimeout(()=> wrap.remove(), ms + 300);
+  }
+
+  // --- API HELPER ---
+  async function api(path, opts = {}) {
+    const method = (opts.method || 'GET').toUpperCase();
+    const headers = { 'Content-Type': 'application/json', ...(opts.headers || {}) };
+    
+    // Ensure CSRF
+    if (method !== 'GET' && method !== 'HEAD' && !window.csrfToken) {
+       await fetchCsrf();
+    }
+    if (window.csrfToken) headers['x-csrf-token'] = window.csrfToken;
+
+    const res = await fetch(path, { credentials: 'include', ...opts, headers });
+    let data;
+    try { data = await res.json(); } catch { data = null; }
+    if (!res.ok) {
+      // Retry once on bad CSRF
+      if (res.status === 403 && data?.error === 'bad_csrf') {
+          await fetchCsrf();
+          headers['x-csrf-token'] = window.csrfToken;
+          const retry = await fetch(path, { credentials: 'include', ...opts, headers });
+          return await retry.json();
+      }
+      throw new Error(data?.error || `HTTP ${res.status}`);
+    }
+    return data;
+  }
+
+  async function postJson(path, body) {
+    return api(path, { method: 'POST', body: JSON.stringify(body || {}) });
+  }
+
+  async function fetchCsrf(){
+    try {
+      const r = await fetch('/api/csrf', { credentials:'include' });
+      if (!r.ok) throw new Error('CSRF bootstrap failed');
+      const { csrfToken } = await r.json();
+      window.csrfToken = csrfToken;
+    } catch(e) { console.warn("CSRF Init Fail", e); }
+  }
+
+  // --- GAME LOGIC ---
+  function initReels() {
+    const containers = document.querySelectorAll('.reel-container .reel-strip');
+    containers.forEach(strip => {
+      let html = '';
+      for(let i=0; i<20; i++) {
+        const num = i % 10;
+        const zeroClass = (num === 0) ? 'is-zero' : '';
+        html += `<div class="reel-num ${zeroClass}">${num}</div>`;
+      }
+      strip.innerHTML = html;
+      strip.style.transform = `translateY(0px)`;
     });
-
-    // light haptic on mobile (best-effort)
-    if (navigator.vibrate) { navigator.vibrate(20); }
   }
-function flashPayout(){
-  if (!payoutEl) return;
-  // retrigger the one-shot animation reliably
-  payoutEl.classList.remove('payout-win');
-  // force reflow
-  void payoutEl.offsetWidth;
-  payoutEl.classList.add('payout-win');
-  // clean up after the glow ends
-  setTimeout(() => payoutEl?.classList.remove('payout-win'), 1400);
-}
 
-async function loadWalletBalances(address) {
-  if (!address) return;
-  try {
-    const r = await fetch(`/api/wallet/balance?address=${encodeURIComponent(address)}`, { credentials: 'include' });
-    const j = await r.json();
-    if (!j?.ok) return;
+  async function animateReels(finalNumber) {
+    const sNum = finalNumber.toString().padStart(4, '0');
+    const digits = sNum.split('').map(Number);
+    const strips = document.querySelectorAll('.reel-strip');
+    const REEL_HEIGHT = 80;
+    const promises = [];
 
-    const kiblEl = document.getElementById('kiblBalance');
-    if (kiblEl) kiblEl.textContent = `KIBL: ${j.kibl}`;
-
-    const nexaEl = document.getElementById('nexaBalance');
-    if (nexaEl) nexaEl.textContent = `NEXA: ${j.nexa}`;
-    updateUI();
-  } catch (e) {
-    console.error('loadWalletBalances failed:', e);  
+    strips.forEach((strip, i) => {
+      strip.parentElement.classList.add('spinning');
+      const targetIndex = 10 + digits[i]; 
+      const targetPos = -(targetIndex * REEL_HEIGHT);
+      const duration = 1000 + (i * 300); 
+      
+      const p = new Promise(resolve => {
+        strip.style.transition = 'none';
+        strip.style.transform = 'translateY(0px)';
+        void strip.offsetWidth;
+        strip.style.transition = `transform ${duration}ms cubic-bezier(0.15, 0.9, 0.35, 1)`;
+        strip.style.transform = `translateY(${targetPos}px)`;
+        setTimeout(() => {
+          strip.parentElement.classList.remove('spinning');
+          resolve();
+        }, duration);
+      });
+      promises.push(p);
+    });
+    return Promise.all(promises);
   }
-}
-function updateUI() {
-    const navConnect = document.getElementById('navConnect');
+
+  function renderTiers() {
+    const list = document.getElementById('tierList');
+    list.innerHTML = '';
+    state.dice.tiers.forEach(tier => {
+      const el = document.createElement('button');
+      el.type = 'button';
+      el.className = 'tier' + (state.dice.selectedTier === tier.id ? ' selected' : '');
+      el.innerHTML = `
+        <div class="tier-main">
+          <div class="tier-emoji">${tier.emoji}</div>
+          <div><div class="tier-name">${tier.label}</div><div class="tier-desc">Roll &lt; ${tier.threshold.toString().padStart(4, '0')}</div></div>
+        </div>
+        <div class="tier-meta">
+          <div>Chance: <strong>${(tier.threshold / 100).toFixed(1)}%</strong></div>
+          <div>Win: <strong>${tier.payoutCredits} credit${tier.payoutCredits !== 1 ? 's' : ''}</strong></div>
+        </div>
+      `;
+      el.addEventListener('click', () => {
+        state.dice.selectedTier = tier.id;
+        renderTiers();
+        document.getElementById('selectedTierLabel').textContent = `Selected: ${tier.emoji} ${tier.label}`;
+        document.getElementById('rollBtn').disabled = false;
+      });
+      list.appendChild(el);
+    });
+  }
+
+  async function startRound() {
+    try {
+        const res = await postJson('/api/dice/start', { clientSeed: crypto.randomUUID() });
+        state.dice.handId       = res.handId;
+        state.dice.commit       = res.commit;
+        state.dice.tiers        = res.tiers || [];
+        state.dice.selectedTier = null;
+        state.dice.fair         = null;
+        state.dice.mode         = 'preRoll';
+
+        renderTiers();
+        document.getElementById('selectedTierLabel').textContent = 'Select your risk tier:';
+        document.getElementById('resultStatus').textContent = '';
+        document.getElementById('rollBtn').disabled = true;
+        document.getElementById('changeTargetBtn').disabled = false;
+    } catch(e) {
+        console.error(e);
+        toast("Failed to start round", { type: 'error' });
+    }
+  }
+  window.startRound = startRound;
+
+  async function rollDice() {
+    const tierId = state.dice.selectedTier;
+    if (!tierId) return toast('Select a target first.', {type:'error'});
+
+    const rollBtn = document.getElementById('rollBtn');
+    rollBtn.disabled = true;
+
+    try {
+        const data = await postJson('/api/dice/roll', { tierId, nonce: Date.now() });
+        await showRollResult(data);
+    } catch(e) {
+        toast(e.message || 'Roll failed', {type:'error'});
+        rollBtn.disabled = false;
+    }
+  }
+
+  async function showRollResult(payload) {
+    const { roll, tier, credit, points, fair } = payload || {};
+    await animateReels(roll);
     
-    console.log("Updating UI. Linked:", !!state.linked, "Local:", state.localWallet);
+    const status    = document.getElementById('resultStatus');
+    const creditUnits = Math.floor((credit || 0) / 100);
+    const pointsInt   = points ?? 0;
 
-    // 1. Navigation Button Logic
-    if (navConnect) {
-      if (state.linked) {
-        navConnect.style.display = 'none'; // Connected!
-      } else if (state.localWallet) {
-        // Zombie State
-        navConnect.style.display = 'inline-flex';
-        navConnect.textContent = '🔓 Unlock Wallet';
-        navConnect.className = 'btn btn-primary';
-        navConnect.onclick = (e) => { e.preventDefault(); doUnlock(); };
-      } else {
-        // Not Connected
-        navConnect.style.display = 'inline-flex';
-        navConnect.textContent = 'Connect Wallet';
-        navConnect.href = '/connect.html';
-      }
-    }
-}
-    async function api(path, opts = {}) {
-  const method = (opts.method || 'GET').toUpperCase();
-
-  const headers = {
-    'Content-Type': 'application/json',
-    ...(opts.headers || {})
-  };
-
-  // Attach CSRF token for mutating methods
-  if (method !== 'GET' && method !== 'HEAD' && method !== 'OPTIONS') {
-    const token = await ensureCsrf();
-    headers['x-csrf-token'] = token;
-  }
-
-  const res = await fetch(path, {
-    credentials: 'include',
-    ...opts,
-    headers
-  });
-
-  // If server sent JSON error payload, surface it
-  let data;
-  try { data = await res.json(); } catch { data = null; }
-  if (!res.ok) {
-    const msg = data?.error || `HTTP ${res.status}`;
-    throw new Error(msg);
-  }
-  return data;
-}
-
-
-    async function postJson(path, body) {
-      return api(path, {
-        method: 'POST',
-        body: JSON.stringify(body || {})
-      });
-    }
-let totalPayout = 0;
-function onHCaptchaLoad() {
-  const el = document.getElementById('payoutCaptcha');
-  if (!el) {
-    console.error('Missing #payoutCaptcha element in DOM.');
-    return;
-  }
-  if (widgetId !== null) return; // already rendered (idempotent)
-
-  widgetId = hcaptcha.render(el, {
-    sitekey: HCAPTCHA_SITE_KEY,
-    size: 'invisible',
-    callback: (token) => {
-      if (pendingResolve) {
-        pendingResolve(token);
-        pendingResolve = null;
-      }
-    },
-    'error-callback': () => {
-      if (pendingResolve) {
-        pendingResolve(Promise.reject(new Error('hCaptcha error')));
-        pendingResolve = null;
-      }
-    },
-    'close-callback': () => {
-      if (pendingResolve) {
-        pendingResolve(Promise.reject(new Error('hCaptcha closed')));
-        pendingResolve = null;
-      }
-    }
-  });
-}
-
-function waitForWidget() {
-  return new Promise((resolve) => {
-    if (widgetId !== null) return resolve(widgetId);
-    // If hcaptcha loaded but didn’t render yet, try again after DOMContentLoaded/onload
-    const check = () => {
-      if (widgetId !== null) resolve(widgetId);
-      else setTimeout(check, 50);
-    };
-    check();
-  });
-}
-   
-    function renderTiers() {
-      const list = document.getElementById('tierList');
-      list.innerHTML = '';
-      state.dice.tiers.forEach(tier => {
-        const el = document.createElement('button');
-        el.type = 'button';
-        el.className = 'tier' + (state.dice.selectedTier === tier.id ? ' selected' : '');
-        el.dataset.tierId = tier.id;
-        el.innerHTML = `
-          <div class="tier-main">
-            <div class="tier-emoji">${tier.emoji}</div>
-            <div>
-              <div class="tier-name">${tier.label}</div>
-              <div class="tier-desc">Roll &lt; ${tier.threshold.toString().padStart(4, '0')}</div>
-            </div>
-          </div>
-          <div class="tier-meta">
-            <div>Chance: <strong>${(tier.threshold / 100).toFixed(1)}%</strong></div>
-            <div>Win: <strong>${tier.payoutCredits} credit${tier.payoutCredits !== 1 ? 's' : ''}</strong></div>
-          </div>
-        `;
-        el.addEventListener('click', () => {
-          state.dice.selectedTier = tier.id;
-          renderTiers();
-          const label = document.getElementById('selectedTierLabel');
-          label.textContent = `Selected: ${tier.emoji} ${tier.label}`;
-          document.getElementById('rollBtn').disabled = false;
-        });
-        list.appendChild(el);
-      });
-    }
-
-    function renderProfile() {
-  const p = state.profile;
-  if (!p) return;
-
-  document.getElementById('bankValue').textContent =
-    (Number(p.bank || 0) / 100).toFixed(2) + ' KIBL';
-
-  const dicePointsEl = document.getElementById('dicePoints');
-  const diceWinsEl   = document.getElementById('diceWins');
-  if (dicePointsEl) dicePointsEl.textContent = p.dicePoints ?? 0;
-  if (diceWinsEl)   diceWinsEl.textContent   = p.diceWins ?? 0;
-}
-    function showError(message) {
-  console.error('[PIXELPUP DICE ERROR]', message);
-
-  // Use the same toast system as the rest of the app if available
-  if (window.toast) {
-    toast(message, { type: 'error' });
-  } else {
-    // Fallback so you still see something in dev
-    alert(message);
-  }
-}
-
-
-async function showRollResult(payload) {
-  const { roll, win, tier, credit, points, fair } = payload || {};
-
-  // --- Standard UI Updates ---
-  const resultRow = document.getElementById('resultRow');
-  const status    = document.getElementById('statusText');
-  const tierEl    = document.getElementById('resultTier');
-  const winEl     = document.getElementById('winAmount');
-  const ptsEl     = document.getElementById('pointsEarned');
-  const fairBtn   = document.getElementById('fairBtn');
-  const changeTargetBtn = document.getElementById('changeTargetBtn');
-await animateReels(roll);
-  if (resultRow) resultRow.hidden = false;
-  if (tierEl) tierEl.textContent = tier?.label || tier?.name || '—';
-
-  const creditUnits = Math.floor((credit || 0) / 100);
-  const pointsInt   = points ?? 0;
-
-  if (winEl) winEl.textContent = creditUnits > 0 ? `+${creditUnits} KIBL` : 'No win this time';
-  if (ptsEl) ptsEl.textContent = pointsInt ? `+${pointsInt} dice pts` : '';
-  if (status) status.textContent = creditUnits > 0 ? 'You fed the pup! 🎲' : 'No snacks this roll.';
-
-  if (fair) {
+    if (status) status.textContent = creditUnits > 0 ? `You fed the pup! +${creditUnits} KIBL 🎲` : 'No snacks this roll.';
+    
     state.dice.fair = fair;
-    if (fairBtn) fairBtn.disabled = false;
-  }
-  
-  // *** CRITICAL FLAG ***
-  // This tells the "Roll Dice" button that the next click is a NEW ROUND (Bet + Roll)
-  state.dice.mode = 'postRoll'; 
+    document.getElementById('fairBtn').disabled = false;
+    state.dice.mode = 'postRoll'; 
 
-  // --- FX ---
-  if (creditUnits > 0) {
-    try {
-      const sfx = document.getElementById('feedSound');
-      if (sfx) { sfx.currentTime = 0; sfx.volume = 0.6; sfx.play().catch(()=>{}); }
-    } catch {}
-    flashPayout();
-    confettiBurst();
-    if (navigator.vibrate) navigator.vibrate([10, 40, 10]);
-  }
-
-  try { await loadProfile(); } catch (e) {}
- try { await loadLeaderboard(); } catch (e) {}
-  // ============================================================
-  // 🔥 FAST RE-ROLL UI SETUP 🔥
-  // ============================================================
-  const rollBtn = document.getElementById('rollBtn');
-  const betBtn  = document.getElementById('betBtn');
-
-  // 1. Keep "Place Bet" HIDDEN
-  if (betBtn) {
-      betBtn.style.display = 'none';
-  }
-
-  // 2. Re-enable "Roll Dice" immediately
-  if (rollBtn) {
-      rollBtn.disabled = false;
-      rollBtn.innerHTML = `<span>Roll Dice</span>`; // <--- Kept standard text
-      rollBtn.classList.remove('busy');
-  }
-
-  // 3. Allow changing target (which resets this flow)
-  if (changeTargetBtn) {
-      changeTargetBtn.disabled = false;
-  }
-}
-    window.loadProfile = loadProfile;
-let currentTier = null;
-let lastResult = null;
-async function handleRollClick() {
-  const btn = document.getElementById('rollBtn');
-  if (!btn) return;
-
-  // --- SCENARIO A: FAST RE-ROLL (Pay + Roll) ---
-  if (state.dice.mode === 'postRoll') {
-      try {
-          const savedTier = state.dice.selectedTier; 
-          if (!savedTier) {
-              alert("Please select a tier first.");
-              return changeTarget(); 
-          }
-
-          // UI Feedback
-          btn.disabled = true;
-          btn.innerHTML = `<span>Rolling...</span>`;
-
-          // 1. Perform Transaction
-          const { placeBet } = await import(`/assets/walletBet.bundle.js?v=ChristmasUpdate`);
-          const { getSigner } = await import("/assets/wallet-modal.js?v=Christmasv22cachedupdate");
-
-          const passphrase = await getSigner();
-          if (!passphrase) throw new Error("Cancelled");
-
-          // Send 100 KIBL
-          await placeBet({
-              passphrase,
-              kiblAmount: 10000, 
-              tokenIdHex: window.KIBL_TOKEN_ID_HEX,
-              feeNexa: 600
-          });
-
-          if (window.toast) toast(`Bet sent!`, { type: 'info' });
-
-          // 2. Start Round on Server
-          await startRound(); 
-
-          // 3. RESTORE TIER & ROLL
-          state.dice.selectedTier = savedTier;
-          
-          // Visual restore
-          renderTiers(); 
-          const tierObj = state.dice.tiers.find(t => t.id === savedTier);
-          if (tierObj) {
-              document.getElementById('selectedTierLabel').textContent = `Selected: ${tierObj.emoji} ${tierObj.label}`;
-          }
-
-          // 4. Execute Roll
-          await rollDice();
-
-      } catch (e) {
-          console.error(e);
-          const msg = e.message || String(e);
-          if (msg !== 'Cancelled') alert("Error: " + msg);
-          
-          // Reset button on error
-          btn.disabled = false;
-          btn.innerHTML = `<span>Roll Dice</span>`;
-      }
-      return;
-  }
-
-  // --- SCENARIO B: STANDARD ROLL (Already paid) ---
-  btn.disabled = true;
-  await rollDice();
-}
-function selectTarget(tierId) {
-  currentTier = DICE_TIERS.find(t => t.id === tierId);
-}
-    // ---------- Core game flow ----------
-    async function startRound() {
-  // Called by walletBet after bet is sent
-  const res = await postJson('/api/dice/start', { clientSeed: crypto.randomUUID() });
-  if (!res.ok) throw new Error(res.error || 'dice_start_error');
-
-  state.dice.handId       = res.handId;
-  state.dice.commit       = res.commit;
-  state.dice.tiers        = res.tiers || [];
-  state.dice.selectedTier = null;
-  state.dice.fair         = null;
-  state.dice.mode         = 'preRoll';
-
-  renderTiers();
-  document.getElementById('selectedTierLabel').textContent = 'Select your risk tier:';
-  document.getElementById('resultStatus').textContent = '';
-
-  const rollBtn         = document.getElementById('rollBtn');
-  const fairBtn         = document.getElementById('fairBtn');
-  const changeTargetBtn = document.getElementById('changeTargetBtn');
-
-  if (rollBtn) rollBtn.disabled = true;          // wait for tier click
-  if (fairBtn) fairBtn.disabled = true;
-  if (changeTargetBtn) changeTargetBtn.disabled = false; // can change tier before roll
-}
-window.startRound = startRound;
-
-
-   async function rollDice() {
-  const tierId = state.dice.selectedTier;
-  if (!tierId) {
-    showError('Select a target first.');
-    return;
-  }
-
-  const body = {
-    tierId,
-    nonce: Date.now()
-  };
-
-  const data = await postJson('/api/dice/roll', body).catch(e => {
-    showError(e.message || 'Roll failed.');
-    return null;
-  });
-  if (!data || !data.ok) {
-    if (data && data.error) showError(data.error);
-    return;
-  }
-
-  // data.tier + data.credit + data.points should come from your backend
-  showRollResult({
-    roll:   data.roll,
-    win:    data.win,
-    tier:   data.tier,
-    credit: data.credit,
-    points: data.points,
-    fair:   data.fair || null
-  });
-
-  document
-    .getElementById('targetSelectRow')
-    ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-}
-
-    async function showFairness() {
-      const fair = state.dice.fair;
-      if (!fair) return;
-      const msg = [
-        `Hand ID: ${fair.handId}`,
-        `Commit:  ${fair.commit}`,
-        `Server:  ${fair.serverSeed}`,
-        `Client:  ${fair.clientSeed || '(none)'}`,
-        '',
-        'Algo:',
-        fair.algo
-      ].join('\n');
-      alert(msg);
+    if (creditUnits > 0) {
+      if (feedSound) { feedSound.currentTime = 0; feedSound.volume = 0.6; feedSound.play().catch(()=>{}); }
+      flashPayout();
+      confettiBurst();
     }
-function changeTarget() {
-  state.dice.selectedTier = null;
-  state.dice.mode = 'idle'; // Reset mode
-
-  renderTiers(); 
-  const label = document.getElementById('selectedTierLabel');
-  if (label) label.textContent = 'Select your risk tier:';
-
-  const rollBtn = document.getElementById('rollBtn');
-  const betBtn = document.getElementById('betBtn');
-
-  // Hide Roll Button
-  if (rollBtn) {
-      rollBtn.disabled = true;
-      rollBtn.innerHTML = `<span>Roll Dice</span>`;
+    
+    // Fast Re-roll UI
+    const rollBtn = document.getElementById('rollBtn');
+    const betBtn  = document.getElementById('betBtn');
+    if (betBtn) betBtn.style.display = 'none';
+    if (rollBtn) {
+        rollBtn.disabled = false;
+        rollBtn.innerHTML = `<span>Roll Dice</span>`; 
+    }
+    
+    loadProfile();
+    loadLeaderboard();
   }
 
-  // Show Standard Bet Button
-  if (betBtn) {
-      betBtn.style.display = 'inline-flex';
-      betBtn.disabled = false;
-      betBtn.textContent = 'Place 100 KIBL Bet';
-  }
-}
-
-async function betAndRollNext() {
-  const previousTier = state.dice.selectedTier;
-  if (!previousTier) {
-    showError('Select a target first.');
-    return;
-  }
-
-  const betBtn = document.getElementById('betBtn');
-  if (!betBtn) {
-    showError('Bet button not found');
-    return;
-  }
-
-  // 1) Place a fresh 100 KIBL bet – same flow as clicking the bet button
-  await onBetClick(betBtn);  // sends tx, calls startRound(), reloads profile
-
-  // 2) Re-apply the chosen tier to the new round
-  state.dice.selectedTier = previousTier;
-  renderTiers();
-
-  // 3) Auto-roll with that tier on the new round
-  await rollDice();
-}
-
-    // ---------- Wire walletBet's betBtn ----------
-    async function onBetClick(btn) {
-      try {
-        btn.disabled = true;
-        btn.classList.add('busy');
-        btn.textContent = 'Loading Wallet...';
-
-        const { placeBet } = await import(`/assets/walletBet.bundle.js?v=ChristmasUpdate`);
-        const { getSigner } = await import("/assets/wallet-modal.js?v=Christmasv22cachedupdate");
-
-        btn.textContent = 'Authorizing...';
-        const passphrase = await getSigner();
-        if (!passphrase) throw new Error("Cancelled");
-
-        btn.textContent = 'Signing...';
-        const { txId } = await placeBet({
-          passphrase,
-          kiblAmount: 10000,
-          tokenIdHex: window.KIBL_TOKEN_ID_HEX,
-          feeNexa: 600
-        });
-
-        if (window.toast) toast(`Bet sent!`, { type: 'win' });
-
-        btn.style.display = 'none';
-
-        if (window.startRound) await window.startRound();
-        if (window.loadProfile) window.loadProfile();
-        if (state.profile?.linked) window.loadWalletBalances?.(state.profile.linked.address);
-
-      } catch (e) {
-        const msg = e.message || String(e);
-        if (msg !== 'Cancelled' && !msg.includes('User rejected')) {
-          alert("Bet Error: " + msg);
+  async function handleRollClick() {
+    const btn = document.getElementById('rollBtn');
+    // SCENARIO A: FAST RE-ROLL (Pay + Roll)
+    if (state.dice.mode === 'postRoll') {
+        const savedTier = state.dice.selectedTier;
+        if (!savedTier) {
+            changeTarget();
+            return;
         }
-        btn.style.display = 'inline-flex';
-        btn.textContent = 'Place 100 KIBL Bet';
-        btn.disabled = false;
-      } finally {
-        btn.classList.remove('busy');
-      }
+
+        btn.disabled = true;
+        btn.innerHTML = `<span>Rolling...</span>`;
+
+        try {
+            // Re-use logic from doBet essentially
+            const { placeBet } = await import(`/assets/walletBet.bundle.js?v=ChristmasUpdate`);
+            const { getSigner } = await import("/assets/wallet-modal.js?v=Christmasv22cachedupdate");
+
+            const passphrase = await getSigner();
+            if (!passphrase) throw new Error("Cancelled");
+
+            await placeBet({
+                passphrase,
+                kiblAmount: 10000, 
+                tokenIdHex: window.KIBL_TOKEN_ID_HEX,
+                feeNexa: 600
+            });
+
+            if (window.toast) toast(`Bet sent!`, { type: 'win' });
+            
+            await startRound();
+            
+            // Auto-select previous tier
+            state.dice.selectedTier = savedTier;
+            renderTiers();
+            const tierObj = state.dice.tiers.find(t => t.id === savedTier);
+            if (tierObj) {
+                document.getElementById('selectedTierLabel').textContent = `Selected: ${tierObj.emoji} ${tierObj.label}`;
+            }
+            await rollDice();
+
+        } catch (e) {
+            console.error(e);
+            if (e.message !== 'Cancelled') alert("Error: " + e.message);
+            btn.disabled = false;
+            btn.innerHTML = `<span>Roll Dice</span>`;
+        }
+        return;
     }
 
-    document.addEventListener('DOMContentLoaded', async () => {
-  const betBtn         = document.getElementById('betBtn');
-  const rollBtn        = document.getElementById('rollBtn');
-  const fairBtn        = document.getElementById('fairBtn');
-  const payoutBtn      = document.getElementById('payoutBtn');
-  const changeTargetBtn = document.getElementById('changeTargetBtn');
-  
+    // SCENARIO B: STANDARD ROLL (Already paid via Start Round)
+    await rollDice();
+  }
 
-  if (betBtn) betBtn.addEventListener('click', () => onBetClick(betBtn));
- if (rollBtn) rollBtn.addEventListener('click', handleRollClick);
-  if (fairBtn) fairBtn.addEventListener('click', showFairness);
-  if (payoutBtn) payoutBtn.addEventListener('click', payout);
-  if (changeTargetBtn) changeTargetBtn.addEventListener('click', changeTarget);
- 
+  function changeTarget() {
+    state.dice.selectedTier = null;
+    state.dice.mode = 'idle';
+    renderTiers();
+    document.getElementById('selectedTierLabel').textContent = 'Select your risk tier:';
+    
+    const rollBtn = document.getElementById('rollBtn');
+    const betBtn = document.getElementById('betBtn');
+    
+    if (rollBtn) { rollBtn.disabled = true; rollBtn.innerHTML = `<span>Roll Dice</span>`; }
+    if (betBtn) {
+        // Reset to initial state logic handled by updateUI mostly, but here we force visible
+        betBtn.style.display = 'inline-flex';
+        betBtn.textContent = 'Place 100 KIBL Bet'; 
+        betBtn.disabled = false;
+    }
+  }
 
-  await ensureCsrf().catch(() => {});
-  loadProfile();
-});
+  async function showFairness() {
+    const fair = state.dice.fair;
+    if (!fair) return;
+    alert(`Hand ID: ${fair.handId}\nCommit: ${fair.commit}\nServer: ${fair.serverSeed}\nClient: ${fair.clientSeed || '(none)'}`);
+  }
 
-  </script>
-  <script type="module">
-  // --- 1. GLOBAL ERROR TRAP ---
-  window.onerror = function(msg, url, line, col, error) {
-    if (String(msg).includes('ResizeObserver')) return;
-    console.error("Global Error:", msg);
+  // --- WALLET & PROFILE LOGIC (Unified with Play/Blackjack) ---
+  async function loadProfile() {
+    try {
+      const d = await api('/api/profile');
+      if (!d.ok) return;
+      state.profile = d;
+      
+      const bankUnits = Math.floor((d.bank || 0) / 100);
+      payoutEl.textContent = `Total Payout: ${bankUnits} KIBL`;
+      if (document.getElementById('userTag') && d.displayId) document.getElementById('userTag').textContent = `Your tag: ${d.displayId}`;
+      
+      if (d.linked?.address && window.loadWalletBalances) {
+         window.loadWalletBalances(d.linked.address);
+      }
+    } catch(e){}
+  }
+
+  async function loadLeaderboard(){
+    try {
+      const d = await api('/api/leaderboard/window?game=dice&k=3');
+      if (!d.ok) return;
+      
+      const list = document.getElementById('leaderboardList');
+      if (!list) return;
+      list.innerHTML = '';
+      
+      d.window.forEach(row => {
+        const li = document.createElement('li');
+        li.innerHTML = `<span class="who">${row.rank}. <span class="user">${row.user}${row.you ? ' (you)' : ''}</span></span><span class="pts">${row.points}</span>`;
+        if (row.you) li.classList.add('you');
+        list.appendChild(li);
+      });
+      
+      const hint = document.getElementById('lbHint');
+      if(hint) hint.textContent = (d.you && d.you.deltaAhead != null) ? `Only ${d.you.deltaAhead} pts to the next rank.` : '';
+    } catch(e){}
+  }
+
+  // --- INITIALIZATION ---
+  window.loadWalletBalances = async function(address) {
+      if (!address) return;
+      try {
+        const j = await api(`/api/wallet/balance?address=${encodeURIComponent(address)}`);
+        if (!j?.ok) return;
+        const kiblEl = document.getElementById('kiblBalance');
+        if (kiblEl) kiblEl.textContent = `KIBL: ${j.kibl}`;
+        const nexaEl = document.getElementById('nexaBalance');
+        if (nexaEl) nexaEl.textContent = `NEXA: ${j.nexa}`;
+      } catch {}
   };
 
-
-  // --- 3. LIGHTWEIGHT API ---
-  async function apiCall(endpoint, body = null) {
-    const headers = {};
-    if (body) {
-      headers['Content-Type'] = 'application/json';
-      if (state.csrf) headers['x-csrf-token'] = state.csrf;
-    }
-    const opts = { credentials: 'include', headers };
-    if (body) {
-      opts.method = 'POST';
-      opts.body = JSON.stringify(body);
-    }
-    const url = `${endpoint}${endpoint.includes('?') ? '&' : '?'}_t=${Date.now()}`;
-    const r = await fetch(url, opts);
-    return r.json();
-  }
-// --- SEND FUNDS LOGIC ---
-  function setupSendListeners() {
-    const openBtn = document.getElementById('openSendBtn');
-    const confirmBtn = document.getElementById('confirmSend');
-    const modal = document.getElementById('sendModal');
-    const closeBtn = modal?.querySelector('.smart-modal-close');
-    
-    // Inputs
-    const addrInput = document.getElementById('sendAddr');
-    const kiblInput = document.getElementById('sendKibl');
-    const nexaInput = document.getElementById('sendNexa');
-
-    // 1. Address History Logic
-    const loadHistory = () => {
-        try {
-            const list = JSON.parse(localStorage.getItem('kk_sent_addrs') || '[]');
-            const dl = document.getElementById('addrHistory');
-            if(dl) {
-                dl.innerHTML = list.map(a => `<option value="${a}">`).join('');
-            }
-        } catch(e) {}
-    };
-
-    const saveToHistory = (addr) => {
-        try {
-            let list = JSON.parse(localStorage.getItem('kk_sent_addrs') || '[]');
-            // Remove if exists, add to top
-            list = list.filter(a => a !== addr);
-            list.unshift(addr);
-            // Keep max 5 recent addresses
-            if (list.length > 5) list.length = 5;
-            localStorage.setItem('kk_sent_addrs', JSON.stringify(list));
-            loadHistory();
-        } catch(e) {}
-    };
-
-    // 2. Modal Controls
-    const openModal = () => {
-        if (!modal) return;
-        
-        // CLEAR FIELDS on open
-        if(addrInput) addrInput.value = '';
-        if(kiblInput) kiblInput.value = '';
-        if(nexaInput) nexaInput.value = '';
-
-        loadHistory(); // Refresh autocomplete list
-        
-        modal.hidden = false;
-        requestAnimationFrame(() => modal.classList.add('active'));
-        if(addrInput) addrInput.focus();
-    };
-
-    const closeModal = () => {
-        if (!modal) return;
-        modal.classList.remove('active');
-        setTimeout(() => { modal.hidden = true; }, 200);
-    };
-
-    if (openBtn) openBtn.onclick = (e) => { e.preventDefault(); openModal(); };
-    if (closeBtn) closeBtn.onclick = (e) => { e.preventDefault(); closeModal(); };
-
-    // 3. Send Transaction Logic
-    if (confirmBtn) {
-        confirmBtn.onclick = async (e) => {
-            e.preventDefault();
-            
-            const addr = addrInput.value.trim();
-            const kiblVal = parseFloat(kiblInput.value || "0");
-            const nexaVal = parseFloat(nexaInput.value || "0");
-            const btn = e.target;
-
-            // --- VALIDATION ---
-            if (!addr.startsWith('nexa:')) return alert('Invalid Nexa Address');
-            
-            // Check Dust Limits (Only if amount > 0)
-            if (kiblVal > 0 && kiblVal < 0.01) return alert("Minimum KIBL amount is 0.01");
-            if (nexaVal > 0 && nexaVal < 6.00) return alert("Minimum NEXA amount is 6.00 (Dust Limit)");
-            if (kiblVal === 0 && nexaVal === 0) return alert("Please enter an amount to send.");
-
-            // --- CONVERSION (Decimals -> Satoshis) ---
-            const amountKiblSats = Math.round(kiblVal * 100);
-            const amountNexaSats = Math.round(nexaVal * 100);
-
-            try {
-                btn.textContent = 'Sending...';
-                btn.disabled = true;
-
-                // Load Deps
-                const { getSigner } = await import("/assets/wallet-modal.js?v=Christmasv22cachedupdate");
-                const { sendFunds } = await import("/assets/walletBet.bundle.js?v=" + Date.now()); 
-
-                const passphrase = await getSigner();
-                if (!passphrase) throw new Error('Cancelled');
-
-                const txId = await sendFunds({
-                    passphrase,
-                    toAddress: addr,
-                    amountKibl: amountKiblSats, 
-                    amountNexa: amountNexaSats
-                });
-
-                alert('Sent! TxId: ' + txId);
-                
-                // Success actions
-                saveToHistory(addr); 
-                closeModal();       
-                
-                // Refresh Balance
-                if (typeof window.loadWalletBalances === 'function' && state.linked) {
-                    window.loadWalletBalances(state.linked.address);
-                }
-
-            } catch (e) {
-                console.error(e);
-                alert('Send Failed: ' + (e.message || e));
-            } finally {
-                btn.textContent = 'Confirm Send';
-                btn.disabled = false;
-            }
-        };
-    }
-  }
-  // --- 4. INIT ---
   async function init() {
-    console.log("Booting BJ UI...");
+    console.log("Booting Dice UI...");
     
-    // A. CSRF
-    try {
-      const r = await fetch('/api/csrf', { credentials: 'include' });
-      const d = await r.json();
-      state.csrf = d.csrfToken;
-      window.csrfToken = d.csrfToken; 
-    } catch (e) { console.error("CSRF Fail", e); }
+    // 1. Fetch CSRF
+    await fetchCsrf();
 
-    // B. Link Status
+    // 2. Check Link Status
     try {
-      const d = await apiCall('/api/wallet/status');
+      const d = await api('/api/wallet/status');
       state.linked = (d && d.ok && d.linked) ? d : null;
-    } catch (e) { console.error("Status Fail", e); }
+    } catch(e) {}
 
-    // C. Local Storage
+    // 3. Check Local Storage
     state.localWallet = !!localStorage.getItem('kk_wallet_v1');
-   const btnBackup = document.getElementById('btnBackup');
-    const backupSection = document.getElementById('backupSection');
     
-    if (state.localWallet && backupSection) {
-        backupSection.style.display = 'block'; 
-    }
+    const btnBackup = document.getElementById('btnBackup');
+    const backupSection = document.getElementById('backupSection');
+    if (state.localWallet && backupSection) backupSection.style.display = 'block';
 
     if (btnBackup) {
         const newBackup = btnBackup.cloneNode(true);
         btnBackup.parentNode.replaceChild(newBackup, btnBackup);
-        
         newBackup.onclick = async () => {
             const pass = prompt("Enter your wallet password to reveal your seed:");
             if (!pass) return;
-
             try {
-                // FIX: Add timestamp ?t=... to force browser to ignore cache and get the new file
-                const module = await import(`/assets/walletBet.bundle.js?t=${Date.now()}`);
-                
+                const module = await import(`/assets/walletBet.bundle.js?t=${Date.now()}`); // Corrected Import
                 const recoverFn = module.recoverSeed || (module.default && module.default.recoverSeed);
-
-                if (typeof recoverFn !== 'function') {
-                    throw new Error("Recovery function still missing. Please Hard Refresh (Ctrl+F5).");
-                }
-
                 const seed = await recoverFn(pass);
-                
-                const confirmBackup = confirm(
-                    "SECURITY WARNING:\n\n" +
-                    "Never share this phrase with anyone.\n" +
-                    "Anyone with this phrase can steal your funds.\n\n" +
-                    "Click OK to view your seed phrase."
-                );
-
-                if (confirmBackup) {
-                    prompt("Here is your Secret Recovery Phrase. Copy it somewhere safe:", seed);
+                if (confirm("SECURITY WARNING:\n\nNever share this phrase.\n\nClick OK to view.")) {
+                    prompt("Secret Recovery Phrase:", seed);
                 }
-            } catch (e) {
-                console.error(e);
-                alert("Error: " + (e.message || String(e)));
-            }
+            } catch (e) { alert("Error: " + e.message); }
         };
     }
 
-    // D. UI Update
+    // 4. Update UI Buttons
     updateUI();
     
-    // E. Setup Result Observer (Unique to Blackjack)
-    setupObserver();
+    // 5. Initial Data
+    loadProfile();
+    loadLeaderboard();
     setupSendListeners();
+    initReels();
   }
 
   function updateUI() {
     const navConnect = document.getElementById('navConnect');
     const betBtn     = document.getElementById('betBtn');
     const depositBtn = document.getElementById('depositBtn');
-    const oldStart   = document.getElementById('bjStart');
-
-    // Hide legacy start button if present
-    if (oldStart) oldStart.style.display = 'none';
-
-    // 1. Navigation Button
+    
+    // Nav Button
     if (navConnect) {
       if (state.linked) {
         navConnect.style.display = 'none'; 
@@ -2514,8 +934,9 @@ async function betAndRollNext() {
       }
     }
 
-    // 2. Bet Button
+    // Bet Button
     if (betBtn) {
+      // Clone to remove old listeners
       const newBtn = betBtn.cloneNode(true);
       betBtn.parentNode.replaceChild(newBtn, betBtn);
 
@@ -2531,7 +952,6 @@ async function betAndRollNext() {
                 alert("Address copied: " + state.linked.address);
             }
         }
-        
         if (window.loadWalletBalances) window.loadWalletBalances(state.linked.address);
 
       } else if (state.localWallet) {
@@ -2546,14 +966,13 @@ async function betAndRollNext() {
     }
   }
 
-  // --- 5. HEAVY ACTIONS (Lazy Load) ---
-
   async function doUnlock() {
     const btn = document.getElementById('navConnect');
     if (btn) btn.textContent = 'Loading...';
 
     try {
-      const { loadWallet } = await import("/assets/walletBet.bundle.js?t=${Date.now()}");
+      // CORRECTED BACKTICK SYNTAX HERE
+      const { loadWallet } = await import(`/assets/walletBet.bundle.js?t=${Date.now()}`);
       const { getSigner } = await import("/assets/wallet-modal.js?v=Christmasv22cachedupdate");
 
       const pass = await getSigner();
@@ -2566,7 +985,7 @@ async function betAndRollNext() {
       const session = await loadWallet(pass);
       
       if(btn) btn.textContent = 'Linking...';
-      await apiCall('/api/wallet/link', { address: session.address, network: 'mainnet' });
+      await api('/api/wallet/link', { method:'POST', body: JSON.stringify({address: session.address, network: 'mainnet'}) });
 
       alert("Wallet Reconnected!");
       window.location.reload();
@@ -2594,23 +1013,19 @@ async function betAndRollNext() {
       if (!passphrase) throw new Error("Cancelled");
 
       btn.textContent = 'Signing...';
-      const { txId } = await placeBet({
+      await placeBet({
           passphrase,
           kiblAmount: 10000, 
           tokenIdHex: window.KIBL_TOKEN_ID_HEX,
           feeNexa: 600
       });
 
-      if (window.toast) toast(`Bet sent!`, { type: 'win' });
-      
-      // Hand over to game logic
+      toast(`Bet sent!`, { type: 'win' });
       btn.style.display = 'none';
       
-      // Blackjack specific start function
-      if (window.startRound) await window.startRound();
-      
-      if (window.loadProfile) window.loadProfile();
-      if (state.linked) window.loadWalletBalances?.(state.linked.address);
+      await startRound();
+      loadProfile();
+      if (state.linked) window.loadWalletBalances(state.linked.address);
 
     } catch (e) {
       const msg = e.message || String(e);
@@ -2625,49 +1040,130 @@ async function betAndRollNext() {
     }
   }
 
-  // --- 6. BLACKJACK OBSERVER ---
-  function setupObserver() {
-    const statusMsg = document.getElementById('bjStatus');
-    if (!statusMsg) return;
+  function setupSendListeners() {
+    const openBtn = document.getElementById('openSendBtn');
+    const confirmBtn = document.getElementById('confirmSend');
+    const modal = document.getElementById('sendModal');
+    const closeBtn = modal?.querySelector('.smart-modal-close');
+    const addrInput = document.getElementById('sendAddr');
+    const kiblInput = document.getElementById('sendKibl');
+    const nexaInput = document.getElementById('sendNexa');
 
-    const obs = new MutationObserver(() => {
-        const text = statusMsg.textContent || "";
-        // Check for Game Over keywords
-        if (text.includes('settled') || text.includes('Win') || text.includes('Loss') || text.includes('Blackjack') || text.includes('Push')) {
-            
-            // Delay to let user see result
-            setTimeout(() => {
-                const betBtn = document.getElementById('betBtn');
-                if (betBtn && betBtn.style.display === 'none') {
-                    betBtn.style.display = 'inline-flex';
-                    betBtn.disabled = false;
-                    betBtn.textContent = 'Place 100 KIBL Bet';
-                    betBtn.classList.remove('busy');
-                    
-                    if (state.linked && window.loadWalletBalances) window.loadWalletBalances(state.linked.address);
-                }
-            }, 1000);
-        }
-    });
+    const loadHistory = () => {
+        try {
+            const list = JSON.parse(localStorage.getItem('kk_sent_addrs') || '[]');
+            const dl = document.getElementById('addrHistory');
+            if(dl) dl.innerHTML = list.map(a => `<option value="${a}">`).join('');
+        } catch(e) {}
+    };
+    const saveToHistory = (addr) => {
+        try {
+            let list = JSON.parse(localStorage.getItem('kk_sent_addrs') || '[]');
+            list = list.filter(a => a !== addr);
+            list.unshift(addr);
+            if (list.length > 5) list.length = 5;
+            localStorage.setItem('kk_sent_addrs', JSON.stringify(list));
+            loadHistory();
+        } catch(e) {}
+    };
+    const openModal = () => {
+        if (!modal) return;
+        if(addrInput) addrInput.value = '';
+        if(kiblInput) kiblInput.value = '';
+        if(nexaInput) nexaInput.value = '';
+        loadHistory();
+        modal.hidden = false;
+        requestAnimationFrame(() => modal.classList.add('active'));
+        if(addrInput) addrInput.focus();
+    };
+    const closeModal = () => {
+        if (!modal) return;
+        modal.classList.remove('active');
+        setTimeout(() => { modal.hidden = true; }, 200);
+    };
+    if (openBtn) openBtn.onclick = (e) => { e.preventDefault(); openModal(); };
+    if (closeBtn) closeBtn.onclick = (e) => { e.preventDefault(); closeModal(); };
+    if (confirmBtn) {
+        confirmBtn.onclick = async (e) => {
+            e.preventDefault();
+            const addr = addrInput.value.trim();
+            const kiblVal = parseFloat(kiblInput.value || "0");
+            const nexaVal = parseFloat(nexaInput.value || "0");
+            const btn = e.target;
+            if (!addr.startsWith('nexa:')) return alert('Invalid Nexa Address');
+            if (kiblVal > 0 && kiblVal < 0.01) return alert("Minimum KIBL amount is 0.01");
+            if (nexaVal > 0 && nexaVal < 6.00) return alert("Minimum NEXA amount is 6.00 (Dust Limit)");
+            if (kiblVal === 0 && nexaVal === 0) return alert("Please enter an amount to send.");
+
+            const amountKiblSats = Math.round(kiblVal * 100);
+            const amountNexaSats = Math.round(nexaVal * 100);
+
+            try {
+                btn.textContent = 'Sending...';
+                btn.disabled = true;
+                const { getSigner } = await import("/assets/wallet-modal.js?v=Christmasv22cachedupdate");
+                const { sendFunds } = await import(`/assets/walletBet.bundle.js?t=${Date.now()}`);
+                const passphrase = await getSigner();
+                if (!passphrase) throw new Error('Cancelled');
+
+                const txId = await sendFunds({ passphrase, toAddress: addr, amountKibl: amountKiblSats, amountNexa: amountNexaSats });
+                alert('Sent! TxId: ' + txId);
+                saveToHistory(addr); 
+                closeModal();       
+                if (state.linked) window.loadWalletBalances(state.linked.address);
+            } catch (e) {
+                alert('Send Failed: ' + (e.message || e));
+            } finally {
+                btn.textContent = 'Confirm Send';
+                btn.disabled = false;
+            }
+        };
+    }
+  }
+
+  // BOOTSTRAP
+  document.addEventListener('DOMContentLoaded', () => {
+    // Buttons
+    const rollBtn = document.getElementById('rollBtn');
+    const fairBtn = document.getElementById('fairBtn');
+    const targetBtn = document.getElementById('changeTargetBtn');
     
-    obs.observe(statusMsg, { childList: true, subtree: true, characterData: true });
-  }
+    if (rollBtn) rollBtn.addEventListener('click', handleRollClick);
+    if (fairBtn) fairBtn.addEventListener('click', showFairness);
+    if (targetBtn) targetBtn.addEventListener('click', changeTarget);
 
-  // --- 7. BOOTSTRAP ---
-  if (document.readyState === 'loading') {
-    addEventListener('DOMContentLoaded', init);
-  } else {
+    // Age Gate Logic
+    (function(){
+      const KEY = 'ageVerified';
+      const ageGate = document.getElementById('ageGate');
+      const confirmBtn = document.getElementById('ageConfirm');
+      const rememberCb = document.getElementById('ageRemember');
+      if (!ageGate) return;
+      
+      const isVerified = localStorage.getItem(KEY) === 'true' || sessionStorage.getItem(KEY) === 'true';
+      if (!isVerified) {
+        ageGate.style.display = 'block';
+        confirmBtn?.addEventListener('click', () => {
+           const remember = !!rememberCb?.checked;
+           (remember ? localStorage : sessionStorage).setItem(KEY, 'true');
+           ageGate.style.display = 'none';
+        });
+      }
+    })();
+
+    // Start App
     init();
-  }
+  });
 </script>
 <script type="module">
   import { initOnboarding } from './assets/onboarding.js';
-  // Initialize for "Blackjack" mode
-  document.addEventListener('DOMContentLoaded', () => initOnboarding('blackjack'));
+  // Initialize for "Dice" mode (if needed)
+  document.addEventListener('DOMContentLoaded', () => initOnboarding?.('dice'));
 </script>
-  <footer class="readout" style="text-align:center; opacity:.9; padding:14px 0 6px;">
-    © 2025 KIBL / PixelPup • Stay shiny 🐶✨ •
-    <a href="tos.html">Terms</a> • <a href="privacy.html">Privacy</a> • <a href="disclaimer.html">Disclaimer</a>
-  </footer>
+
+<footer style="opacity:.9;color:var(--text-dim);font-size:12px;text-align:center;padding:14px 0 6px;">
+  © 2025 KIBL / PixelPup • Stay shiny 🐶✨ •
+  <a href="tos.html">Terms</a> • <a href="privacy.html">Privacy</a> • <a href="disclaimer.html">Disclaimer</a>
+</footer>
 </body>
 </html>
