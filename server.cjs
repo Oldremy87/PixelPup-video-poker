@@ -36,7 +36,7 @@ async function ensureRostrum() {
     console.log('✅ [Rostrum] Connected to Private Node (NVMe Accelerated)');
   } catch (e) {
     console.warn('⚠️ [Rostrum] Private node unreachable, attempting failover:', e.message);
-
+  }
     try {
       await rostrumProvider.connect({ 
         scheme: 'wss', 
