@@ -45,7 +45,7 @@ async function establishConnection(rostrumProvider: any) {
   console.log('[Client] Connecting to network...');
 
   // 1. Try Private Node
-  /*
+  
   try {
     await rostrumProvider.connect(PRIVATE_NODE);
     if (await isConnectionHealthy(rostrumProvider)) {
@@ -55,7 +55,7 @@ async function establishConnection(rostrumProvider: any) {
   } catch (e) {
     console.warn('⚠️ Private node unreachable, trying public...');
   }
-  */
+  
 
   // 2. Try Public Node (Failover)
   try {
