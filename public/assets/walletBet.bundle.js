@@ -8,7 +8,6 @@ const KIBL_GROUP_ADDR = "nexa:tpjkhlhuazsgskkt5hyqn3d0e7l6vfvfg97cf42pprntks4x7v
 const KIBL_TOKEN_HEX = "656bfefce8a0885acba5c809c5afcfbfa62589417d84d54108e6bb42a6f30000";
 const HOUSE_ADDRESS = "nexa:nqtsq5g5pvucuzm2kh92kqtxy5s3zfutq3xgnhh5src65fc3";
 const KIBL_TOKEN_ID = "nexa:tpjkhlhuazsgskkt5hyqn3d0e7l6vfvfg97cf42pprntks4x7vqqqcavzypmt";
-const PRIVATE_NODE = { scheme: "wss", host: "node.remy-dev.com", port: 443 };
 const PUBLIC_NODE = { scheme: "wss", host: "electrum.nexa.org", port: 20004 };
 const GLOBALS = globalThis;
 GLOBALS.__WALLET_SESSION = GLOBALS.__WALLET_SESSION || null;
@@ -31,15 +30,6 @@ async function isConnectionHealthy(rostrumProvider2) {
 }
 async function establishConnection(rostrumProvider2) {
   console.log("[Client] Connecting to network...");
-  try {
-    await rostrumProvider2.connect(PRIVATE_NODE);
-    if (await isConnectionHealthy(rostrumProvider2)) {
-      console.log("✅ Connected: Private Node");
-      return true;
-    }
-  } catch (e) {
-    console.warn("⚠️ Private node unreachable, trying public...");
-  }
   try {
     await rostrumProvider2.connect(PUBLIC_NODE);
     if (await isConnectionHealthy(rostrumProvider2)) {
