@@ -2,6 +2,8 @@
 import { defineConfig } from 'vite';
 import path from 'node:path';
 import { nodePolyfills } from 'vite-plugin-node-polyfills'
+import commonjs from '@rollup/plugin-commonjs';
+
 
 export default defineConfig({
   publicDir: false,                 // do not copy /public/ into /public/assets
@@ -10,6 +12,11 @@ export default defineConfig({
       protocolImports: true,
       // leave defaults; plugin injects crypto, stream, util, events, buffer, process, etc.
     }),
+     commonjs({
+    transformMixedEsModules: true,
+    requireReturnsDefault: 'auto',
+    strictRequires: false,
+  }),
   ],
   build: {
     outDir: 'public/assets',
@@ -30,11 +37,7 @@ export default defineConfig({
         chunkFileNames: 'chunks/[name]-[hash].js',
         assetFileNames: 'assets/[name]-[hash][extname]',
       },
-      commonjsOptions: {
-        transformMixedEsModules: true,
-        requireReturnsDefault: 'auto',
-        strictRequires: false,
-      },
+    
     },
   },
   resolve: {

@@ -1,4 +1,4 @@
-import { B as Buffer$1, p as process$1, n as nodeCrypto } from "./chunks/index-C_zbkbH-.js";
+import { B as Buffer$1, p as process$1, n as nodeCrypto } from "./chunks/index-4OmLNdFl.js";
 globalThis.Buffer = Buffer$1;
 globalThis.process = process$1;
 globalThis.__nodeCrypto = nodeCrypto;
@@ -7,7 +7,7 @@ const IV = "kk_wallet_iv_v1";
 const PRIVATE_NODE = { scheme: "wss", host: "node.remy-dev.com", port: 443 };
 const PUBLIC_NODE = { scheme: "wss", host: "electrum.nexa.org", port: 20004 };
 async function sdk() {
-  return await import("./chunks/index.web-Does7zZT.js");
+  return await import("./chunks/index.web-DbMxL4du.js");
 }
 async function ensureCsrf() {
   if (window.csrfToken) return window.csrfToken;
