@@ -74,42 +74,6 @@ app.use('/cards', express.static(path.join(__dirname, 'public', 'cards'), {
   etag: true,
   maxAge: '30d',
 }));
-// server.cjs (near your middleware)
-const PUBLIC_DIR = path.join(__dirname, 'public');
-const DIST_DIR   = path.join(PUBLIC_DIR, 'dist');
-
-app.use(express.static(PUBLIC_DIR, {
-  maxAge: isProd ? '1h' : 0,
-  etag: true,
-  lastModified: true,
-  setHeaders: (res, filePath) => {
-    if (filePath.endsWith('.html')) {
-      res.setHeader('Cache-Control', 'no-store');
-      return;
-    }
-
-    // If you add ?v=... to JS URLs, you can safely make them immutable.
-    if (/\.(js|css)$/i.test(filePath)) {
-      res.setHeader('Cache-Control', isProd ? 'public, max-age=31536000, immutable' : 'no-store');
-      return;
-    }
-
-    if (/\.(png|jpg|jpeg|gif|svg|ico)$/i.test(filePath)) {
-      res.setHeader('Cache-Control', isProd ? 'public, max-age=86400, immutable' : 'no-store');
-      return;
-    }
-  }
-}));
-
-// (Optional but very helpful) explicit mount:
-app.use('/dist', express.static(DIST_DIR, {
-  setHeaders: (res, filePath) => {
-    if (/\.(js|css)$/i.test(filePath)) {
-      res.setHeader('Cache-Control', isProd ? 'public, max-age=31536000, immutable' : 'no-store');
-    }
-  }
-}));
-
 
 const isProd = process.env.NODE_ENV === 'production' || !!process.env.RENDER;
 function must(name) {
