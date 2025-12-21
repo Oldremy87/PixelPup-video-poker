@@ -57,9 +57,6 @@ async function ensureRostrum() {
 
 const KIBL_GROUP_HEX = '656bfefce8a0885acba5c809c5afcfbfa62589417d84d54108e6bb42a6f30000';
 
-const path = require('path');
-const express = require('express');
-
 // Serve Vite build output
 app.use('/dist', express.static(path.join(__dirname, 'public', 'dist'), {
   fallthrough: false,
