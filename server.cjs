@@ -330,6 +330,13 @@ function requireAdmin(req, res) {
   }
   return true;
 }
+function sqlMaxTs(col) {
+  // chooses the later of s.col vs t.col, safe with NULLs
+  return `${col} = to_timestamp(GREATEST(
+    EXTRACT(EPOCH FROM COALESCE(t.${col}, to_timestamp(0))),
+    EXTRACT(EPOCH FROM COALESCE(s.${col}, to_timestamp(0)))
+  ))`;
+}
 
 
  //POST /api/admin/merge-wallet-dupes
