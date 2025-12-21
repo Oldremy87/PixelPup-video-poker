@@ -591,18 +591,18 @@ if (hasDb) {
     const displayId = await ensureDisplayId(req.uid);
     
     // 3. Calculate Balances
-    const balPoker = Math.max(0, Number(req.session.wallet?.poker || 0));
-    const balBJ    = Math.max(0, Number(req.session.wallet?.blackjack || 0));
-    const total    = Math.min(BANK_CAP, balPoker + balBJ);
-    req.session.bank = total;
+   const balPoker = Math.max(0, Number(poker?.bank_minor || 0));
+const balBJ    = Math.max(0, Number(bj?.bank_minor || 0));
+const total    = Math.min(BANK_CAP, balPoker + balBJ);
+    
 
     // 4. Send Response
     return res.json({
       ok: true,
        displayId,
       linked, 
-      bank: total,
       balances: { poker: balPoker, blackjack: balBJ, total },
+bank: total,
       stats: {
         poker: {
           wins: poker?.wins || 0,
@@ -899,7 +899,9 @@ async function saveStatsFor(uid, game, { creditMinor, isWin, isRoyal, flags }) {
   const vals = [uid, creditMinor, Number(process.env.BANK_CAP || 2_000_000)];
   if (isWin)   sets.push('wins = wins + 1');
   if (isRoyal) sets.push('royal_flushes = royal_flushes + 1'); // harmless for BJ (stays 0)
-  for (const f of (flags || [])) sets.push(`${f} = true`);
+  const uniqFlags = [...new Set(flags || [])];
+for (const f of uniqFlags) sets.push(`${f} = true`);
+  
   await p.query(`update ${stats} set ${sets.join(', ')}, last_seen_at = now() where user_id = $1`, vals);
 }
 
@@ -959,7 +961,8 @@ async function saveAfterDraw(uid, { creditMinor, isWin, isRoyal, flags }){
   const vals = [uid, creditMinor, Number(process.env.BANK_CAP||2000000)];
   if (isWin) sets.push('wins = wins + 1');
   if (isRoyal) sets.push('royal_flushes = royal_flushes + 1');
-  for (const f of flags||[]) sets.push(`${f} = true`);
+  const uniqFlags = [...new Set(flags || [])];
+for (const f of uniqFlags) sets.push(`${f} = true`);
   await p.query(`update user_stats set ${sets.join(', ')}, last_seen_at=now() where user_id=$1`, vals);
 }
 
