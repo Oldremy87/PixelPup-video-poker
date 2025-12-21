@@ -473,6 +473,32 @@
   const KIBL_TOKEN_ID_HEX = "656bfefce8a0885acba5c809c5afcfbfa62589417d84d54108e6bb42a6f30000";
   const BET_AMOUNT_KIBL = 10000;
   const BET_FEE_NEXA = 600;
+  // ---- ASSET VERSIONING (ONE per page-load) ----
+const __assetVPromise = (async () => {
+  try {
+    const r = await fetch('/api/version', { cache: 'no-store' });
+    const j = await r.json();
+    // prefer build, then commit, else fallback
+    return (j.build || j.commit || null);
+  } catch {
+    return null;
+  }
+})();
+
+const __assetUrlsPromise = (async () => {
+  const v = (await __assetVPromise) || String(Date.now()); // Date.now ONLY ONCE per page-load
+  const qs = `v=${encodeURIComponent(v)}`;
+  return {
+    walletModUrl: `/assets/walletBet.bundle.js?${qs}`,
+    modalUrl:     `/assets/wallet-modal.js?${qs}`,
+  };
+})();
+
+// helper you can call anywhere
+async function getAssetUrls() {
+  return __assetUrlsPromise;
+}
+
 
   const state = {
     csrf: null,
@@ -940,8 +966,9 @@
     if (btn) btn.textContent = 'Loading...';
 
     try {
-      const { loadWallet } = await import(`/assets/walletBet.bundle.js?v=ChristmasUpdate`);
-      const { getSigner } = await import("/assets/wallet-modal.js?v=Christmasv22cachedupdate");
+    const { walletModUrl, modalUrl } = await getAssetUrls();
+const { loadWallet } = await import(walletModUrl);
+const { getSigner }  = await import(modalUrl);
 
       const pass = await getSigner();
       if (!pass) {
@@ -967,8 +994,9 @@
   // --- INTERNAL BET HELPER ---
   async function triggerBet(btnElement) {
     try {
-      const { placeBet } = await import(`/assets/walletBet.bundle.js?v=ChristmasUpdate`);
-      const { getSigner } = await import("/assets/wallet-modal.js?v=Christmasv22cachedupdate");
+     const { walletModUrl, modalUrl } = await getAssetUrls();
+const { placeBet } = await import(walletModUrl);
+const { getSigner } = await import(modalUrl);
 
       const passphrase = await getSigner();
       if (!passphrase) throw new Error("Cancelled");
@@ -1080,8 +1108,9 @@
             try {
                 btn.textContent = 'Sending...';
                 btn.disabled = true;
-                const { getSigner } = await import("/assets/wallet-modal.js?v=Christmasv22cachedupdate");
-                const { sendFunds } = await import(`/assets/walletBet.bundle.js?t=${Date.now()}`);
+                const { walletModUrl, modalUrl } = await getAssetUrls();
+const { sendFunds } = await import(walletModUrl);
+const { getSigner } = await import(modalUrl);
                 const passphrase = await getSigner();
                 if (!passphrase) throw new Error('Cancelled');
 
