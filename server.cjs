@@ -1755,7 +1755,6 @@ const { rows } = await p.query(
     
     const tx = await cachedServerWallet.newTransaction(spendingAccount)
       .onNetwork('mainnet')
-      .sendTo(targetAddress, '546') 
       .sendToToken(targetAddress, String(FAUCET_AMOUNT), process.env.KIBL_GROUP_ID || KIBL_GROUP_HEX)
       .populate()
       .sign()
@@ -1872,68 +1871,121 @@ app.post('/api/payout', payoutLimiter, async (req, res) => {
     
     if (!captchaResponse?.success) return res.status(400).json({ error: 'Captcha failed' });
     // Check Balance
-    const game = (req.body?.game || 'all').toString().toLowerCase();
-    const pokerMinor = Math.max(0, Number(req.session.wallet?.poker || 0));
-    const bjMinor    = Math.max(0, Number(req.session.wallet?.blackjack || 0));
-    const availableMinor = (game === 'poker') ? pokerMinor : (game === 'blackjack') ? bjMinor : (pokerMinor + bjMinor);
+// Check Balance (DB source of truth)
+const game = (req.body?.game || 'all').toString().toLowerCase();
+if (!hasDb) return res.status(400).json({ error: 'db_required' });
 
-    if (!availableMinor || availableMinor <= 0) return res.status(400).json({ error: 'No balance to withdraw' });
+const p = await db();
+const ip = getClientIp(req);
 
-    // 4. PREPARE RPC SEND
-    const sendMinor = Math.min(availableMinor, MAX_PAYOUT);
-    const sendWholeKibl = Math.floor(sendMinor / 100);
+let pokerMinor = 0;
+let bjMinor    = 0;
+let sendMinor  = 0;
+let deductPoker = 0;
+let deductBJ    = 0;
 
-    // Deduction logic
-    let deductPoker = 0, deductBJ = 0;
-    if (game === 'poker') deductPoker = sendMinor;
-    else if (game === 'blackjack') deductBJ = sendMinor;
-    else {
-        deductPoker = Math.min(pokerMinor, sendMinor);
-        deductBJ = sendMinor - deductPoker;
-    }
+await p.query('BEGIN');
+try {
+  // Lock both rows (so two devices can't race-withdraw)
+  const pr = await p.query(
+    `SELECT bank_minor
+       FROM user_stats
+      WHERE user_id = $1
+      FOR UPDATE`,
+    [req.uid]
+  );
+  const br = await p.query(
+    `SELECT bank_minor
+       FROM user_stats_blackjack
+      WHERE user_id = $1
+      FOR UPDATE`,
+    [req.uid]
+  );
 
-  
+  pokerMinor = Math.max(0, Number(pr.rows[0]?.bank_minor || 0));
+  bjMinor    = Math.max(0, Number(br.rows[0]?.bank_minor || 0));
 
-    
-    // - REPLACING RPC CALL WITH SDK
-    console.log(`[Payout] Sending ${sendMinor} KIBL to ${targetAddress}`);
+  const availableMinor =
+    (game === 'poker') ? pokerMinor :
+    (game === 'blackjack') ? bjMinor :
+    (pokerMinor + bjMinor);
 
+  if (availableMinor <= 0) {
+    await p.query('ROLLBACK');
+    return res.status(400).json({ error: 'No balance to withdraw' });
+  }
 
+  sendMinor = Math.min(availableMinor, MAX_PAYOUT);
 
-    const tx = await cachedServerWallet.newTransaction(spendingAccount)
-      .sendToToken(targetAddress, String(sendMinor), process.env.KIBL_GROUP_ID || KIBL_GROUP_HEX)
-      .sendTo(targetAddress, '546') // Dust NEXA
-      .populate()
-      .sign()
-      .build();
+  // Deduction split
+  if (game === 'poker') {
+    deductPoker = sendMinor;
+  } else if (game === 'blackjack') {
+    deductBJ = sendMinor;
+  } else {
+    deductPoker = Math.min(pokerMinor, sendMinor);
+    deductBJ = sendMinor - deductPoker;
+  }
 
-    const txId = await cachedServerWallet.sendTransaction(tx);
-    console.log('[Payout] Broadcast success:', txId);
+  // Reserve funds now (atomic)
+  if (deductPoker > 0) {
+    await p.query(
+      `UPDATE user_stats
+          SET bank_minor = GREATEST(bank_minor - $2, 0),
+              last_seen_at = now()
+        WHERE user_id = $1`,
+      [req.uid, deductPoker]
+    );
+  }
+  if (deductBJ > 0) {
+    await p.query(
+      `UPDATE user_stats_blackjack
+          SET bank_minor = GREATEST(bank_minor - $2, 0),
+              last_seen_at = now()
+        WHERE user_id = $1`,
+      [req.uid, deductBJ]
+    );
+  }
 
-     req.session.wallet.poker = Math.max(0, pokerMinor - deductPoker);
-    req.session.wallet.blackjack = Math.max(0, bjMinor - deductBJ);
-    req.session.bank = req.session.wallet.poker + req.session.wallet.blackjack;
-    
-    // DB Update
-    if (hasDb) {
-        const p = await db();
-        const ip = getClientIp(req);
+  await p.query('COMMIT');
+} catch (e) {
+  await p.query('ROLLBACK');
+  throw e;
+}
 
+// NOW broadcast tx (no DB tx held)
+const sendWholeKibl = Math.floor(sendMinor / 100);
+console.log(`[Payout] Sending ${sendWholeKibl} KIBL (${sendMinor} minor) to ${targetAddress}`);
+
+const tx = await cachedServerWallet.newTransaction(spendingAccount)
+  .sendToToken(targetAddress, String(sendMinor), process.env.KIBL_GROUP_ID || KIBL_GROUP_HEX)
+  .sendTo(targetAddress, '546')
+  .populate()
+  .sign()
+  .build();
+
+const txId = await cachedServerWallet.sendTransaction(tx);
+console.log('[Payout] Broadcast success:', txId);
+
+// Record payout (success)
 await p.query(
   `INSERT INTO payouts(user_id, user_id_uuid, address, amount_kibl, tx_id, session_id, ip, type, status)
    VALUES ($1, $2, $3, $4, $5, $6, $7, 'withdrawal', 'success')`,
   [String(req.uid), req.uid, targetAddress, sendWholeKibl, txId, req.sessionID, ip]
 );
-        if (deductPoker > 0) await p.query('UPDATE user_stats SET bank_minor = GREATEST(bank_minor - $2, 0) WHERE user_id = $1', [req.uid, deductPoker]);
-        if (deductBJ > 0) await p.query('UPDATE user_stats_blackjack SET bank_minor = GREATEST(bank_minor - $2, 0) WHERE user_id = $1', [req.uid, deductBJ]);
-    }
 
-    return res.json({
-        success: true,
-        txId,
-        sentKIBL: sendWholeKibl,
-        remainingKIBL: Math.floor(req.session.bank / 100)
-    });
+// Sync session cache to match the DB result (optional but helps UI)
+req.session.wallet ||= { poker: 0, blackjack: 0 };
+req.session.wallet.poker = Math.max(0, pokerMinor - deductPoker);
+req.session.wallet.blackjack = Math.max(0, bjMinor - deductBJ);
+req.session.bank = req.session.wallet.poker + req.session.wallet.blackjack;
+
+return res.json({
+  success: true,
+  txId,
+  sentKIBL: sendWholeKibl,
+  remainingKIBL: Math.floor(req.session.bank / 100),
+});
 
   } catch (error) {
     logger.error('Payout failed', { error: String(error) });
