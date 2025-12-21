@@ -57,6 +57,58 @@ async function ensureRostrum() {
 
 const KIBL_GROUP_HEX = '656bfefce8a0885acba5c809c5afcfbfa62589417d84d54108e6bb42a6f30000';
 
+const path = require('path');
+const express = require('express');
+
+// Serve Vite build output
+app.use('/dist', express.static(path.join(__dirname, 'public', 'dist'), {
+  fallthrough: false,
+  etag: true,
+  maxAge: '1y',
+  immutable: true,
+}));
+
+// Serve cards (keep these OUT of /dist)
+app.use('/cards', express.static(path.join(__dirname, 'public', 'cards'), {
+  fallthrough: false,
+  etag: true,
+  maxAge: '30d',
+}));
+// server.cjs (near your middleware)
+const PUBLIC_DIR = path.join(__dirname, 'public');
+const DIST_DIR   = path.join(PUBLIC_DIR, 'dist');
+
+app.use(express.static(PUBLIC_DIR, {
+  maxAge: isProd ? '1h' : 0,
+  etag: true,
+  lastModified: true,
+  setHeaders: (res, filePath) => {
+    if (filePath.endsWith('.html')) {
+      res.setHeader('Cache-Control', 'no-store');
+      return;
+    }
+
+    // If you add ?v=... to JS URLs, you can safely make them immutable.
+    if (/\.(js|css)$/i.test(filePath)) {
+      res.setHeader('Cache-Control', isProd ? 'public, max-age=31536000, immutable' : 'no-store');
+      return;
+    }
+
+    if (/\.(png|jpg|jpeg|gif|svg|ico)$/i.test(filePath)) {
+      res.setHeader('Cache-Control', isProd ? 'public, max-age=86400, immutable' : 'no-store');
+      return;
+    }
+  }
+}));
+
+// (Optional but very helpful) explicit mount:
+app.use('/dist', express.static(DIST_DIR, {
+  setHeaders: (res, filePath) => {
+    if (/\.(js|css)$/i.test(filePath)) {
+      res.setHeader('Cache-Control', isProd ? 'public, max-age=31536000, immutable' : 'no-store');
+    }
+  }
+}));
 
 
 const isProd = process.env.NODE_ENV === 'production' || !!process.env.RENDER;
@@ -248,6 +300,16 @@ app.use(
     },
   })
 );
+app.get('/api/version', (_req, res) => {
+  res.set('Cache-Control', 'no-store');
+  res.json({
+    ok: true,
+    commit: process.env.GIT_COMMIT || null,
+    build: process.env.BUILD_ID || process.env.RENDER_GIT_COMMIT || null,
+    ts: Date.now()
+  });
+});
+
 // =================== Logging ===================
 const logger = winston.createLogger({
   level: 'info',
@@ -266,9 +328,17 @@ app.get('/healthz', async (_req,res)=>{
   res.json({ ok:true, ts:new Date().toISOString(), db: dbOk });
 });
 
-app.get('/api/version', (_req,res)=> {
-  res.json({ ok:true, commit: process.env.GIT_COMMIT || null, build: process.env.BUILD_ID || null });
-});
+app.use('/dist', express.static(path.join(__dirname, 'public/dist'), {
+  etag: true,
+  maxAge: '1y',
+  immutable: true
+}));
+
+app.use('/cards', express.static(path.join(__dirname, 'public/cards'), {
+  etag: true,
+  maxAge: '30d'
+}));
+
 app.use((req, _res, next) => {
   logger.info('Incoming request', {
     method: req.method, url: req.url,
