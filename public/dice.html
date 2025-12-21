@@ -488,8 +488,7 @@ const v = await getBuildVersion();
 // use ONE version per page-load
 const walletModUrl = `/assets/walletBet.bundle.js?v=${encodeURIComponent(v)}`;
 const modalUrl     = `/assets/wallet-modal.js?v=${encodeURIComponent(v)}`;
-const walletModP = import(walletModUrl);
-const modalModP  = import(modalUrl);
+
   // ---- ASSET VERSIONING (ONE per page-load) ----
 const __assetVPromise = (async () => {
   try {
