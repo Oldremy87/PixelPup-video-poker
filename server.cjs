@@ -586,7 +586,7 @@ if (hasDb) {
   if (rows[0]?.address) linked = { linked:true, ...rows[0] };
 } else if (req.session?.linkedWallet) {
   linked = { linked:true, ...req.session.linkedWallet };
-}
+}t 
 
     const displayId = await ensureDisplayId(req.uid);
     
