@@ -586,7 +586,7 @@ if (hasDb) {
   if (rows[0]?.address) linked = { linked:true, ...rows[0] };
 } else if (req.session?.linkedWallet) {
   linked = { linked:true, ...req.session.linkedWallet };
-}t 
+}
 
     const displayId = await ensureDisplayId(req.uid);
     
@@ -611,7 +611,7 @@ bank: total,
             firstWin:   !!poker?.first_win,
             w10:        !!poker?.w10,
             w25:        !!poker?.w25,
-            w50:        !!poker?.w50,
+            w50:        !!poker?.w50, 
             royalFlush: !!poker?.royal_win
           }
         },
