@@ -1550,7 +1550,7 @@ const __assetUrlsPromise = (async () => {
   const qs = `v=${encodeURIComponent(v)}`;
   return {
     walletModUrl: `/dist/walletBet.bundle.js?${qs}`,
-    modalUrl:     `/dist/wallet-modal.js?${qs}`,
+    modalUrl:     `/assets/wallet-modal.js?${qs}`,
   };
 })();
 
@@ -1928,7 +1928,7 @@ const { getSigner } = await import(modalUrl);
   }
 </script>
 <script type="module">
-  import { initOnboarding } from './dist/onboarding.js';
+  import { initOnboarding } from './assets/onboarding.js';
   // Initialize for "Poker" mode
   document.addEventListener('DOMContentLoaded', () => initOnboarding('poker'));
 </script>

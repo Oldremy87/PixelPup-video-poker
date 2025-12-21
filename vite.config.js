@@ -19,26 +19,27 @@ export default defineConfig({
   }),
   ],
   build: {
-  outDir: 'public/dist',
+    outDir: 'public/dist',
   emptyOutDir: true,
-  target: 'es2022',
-  sourcemap: true,
-  minify: false,
-  lib: {
-    entry: {
-      'connect.bundle':   path.resolve(__dirname, 'src/connect.ts'),
-      'walletBet.bundle': path.resolve(__dirname, 'src/walletBet.ts'),
+    target: 'es2022',
+    sourcemap: true,                // keep on while we verify
+    minify: false,                  // TEMP: avoid TDZ-obscuring minification
+    lib: {
+      entry: {
+        'connect.bundle':   path.resolve(__dirname, 'src/connect.ts'),
+        'walletBet.bundle': path.resolve(__dirname, 'src/walletBet.ts'),
+      },
+      formats: ['es'],
     },
-    formats: ['es'],
-  },
-  rollupOptions: {
-    output: {
-      entryFileNames: '[name].js',
-      chunkFileNames: 'chunks/[name]-[hash].js',
+    rollupOptions: {
+      output: {
+        entryFileNames: '[name].js',
+        chunkFileNames: 'chunks/[name]-[hash].js',
+        distFileNames: 'dist/[name]-[hash][extname]',
+      },
+    
     },
   },
-},
-
   resolve: {
     alias: {
       // Force the SDK to its browser ESM build
