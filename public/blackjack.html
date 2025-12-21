@@ -1578,6 +1578,23 @@ async function split(){
     if (String(msg).includes('ResizeObserver')) return;
     console.error("Global Error:", msg);
   };
+  async function getBuildVersion() {
+  try {
+    const r = await fetch('/api/version', { cache: 'no-store' });
+    const j = await r.json();
+    return j?.build || j?.commit || String(Date.now());
+  } catch {
+    // if version endpoint fails, still prevent “stuck forever” caching
+    return String(Date.now());
+  }
+}
+const v = await getBuildVersion();
+
+// use ONE version per page-load
+const walletModUrl = `/assets/walletBet.bundle.js?v=${encodeURIComponent(v)}`;
+const modalUrl     = `/assets/wallet-modal.js?v=${encodeURIComponent(v)}`;
+const walletModP = import(walletModUrl);
+const modalModP  = import(modalUrl);
 // ---- ASSET VERSIONING (ONE per page-load) ----
 const __assetVPromise = (async () => {
   try {
@@ -1787,10 +1804,8 @@ async function getAssetUrls() {
 
             try {
                 // FIX: Add timestamp ?t=... to force browser to ignore cache and get the new file
-                const module = await import(`/assets/walletBet.bundle.js?t=${Date.now()}`);
-                
-                const recoverFn = module.recoverSeed || (module.default && module.default.recoverSeed);
-
+                const module = await walletModP;
+const recoverFn = module.recoverSeed || (module.default && module.default.recoverSeed);
                 if (typeof recoverFn !== 'function') {
                     throw new Error("Recovery function still missing. Please Hard Refresh (Ctrl+F5).");
                 }

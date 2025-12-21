@@ -473,6 +473,23 @@
   const KIBL_TOKEN_ID_HEX = "656bfefce8a0885acba5c809c5afcfbfa62589417d84d54108e6bb42a6f30000";
   const BET_AMOUNT_KIBL = 10000;
   const BET_FEE_NEXA = 600;
+  async function getBuildVersion() {
+  try {
+    const r = await fetch('/api/version', { cache: 'no-store' });
+    const j = await r.json();
+    return j?.build || j?.commit || String(Date.now());
+  } catch {
+    // if version endpoint fails, still prevent “stuck forever” caching
+    return String(Date.now());
+  }
+}
+const v = await getBuildVersion();
+
+// use ONE version per page-load
+const walletModUrl = `/assets/walletBet.bundle.js?v=${encodeURIComponent(v)}`;
+const modalUrl     = `/assets/wallet-modal.js?v=${encodeURIComponent(v)}`;
+const walletModP = import(walletModUrl);
+const modalModP  = import(modalUrl);
   // ---- ASSET VERSIONING (ONE per page-load) ----
 const __assetVPromise = (async () => {
   try {
