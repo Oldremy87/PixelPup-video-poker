@@ -1595,8 +1595,8 @@ const __assetUrlsPromise = (async () => {
   const v = (await __assetVPromise) || String(Date.now()); // Date.now ONLY ONCE per page-load
   const qs = `v=${encodeURIComponent(v)}`;
   return {
-    walletModUrl: `/assets/walletBet.bundle.js?${qs}`,
-    modalUrl:     `/assets/wallet-modal.js?${qs}`,
+    walletModUrl: `/dist/walletBet.bundle.js?${qs}`,
+    modalUrl:     `/dist/wallet-modal.js?${qs}`,
   };
 })();
 
@@ -1788,7 +1788,7 @@ async function getAssetUrls() {
 
             try {
                 // FIX: Add timestamp ?t=... to force browser to ignore cache and get the new file
-                const module = await import(`/assets/walletBet.bundle.js?t=${Date.now()}`);
+                const module = await import(`/dist/walletBet.bundle.js?t=${Date.now()}`);
                 
                 const recoverFn = module.recoverSeed || (module.default && module.default.recoverSeed);
 
@@ -1996,7 +1996,7 @@ const { getSigner } = await import(modalUrl);
   }
 </script>
 <script type="module">
-  import { initOnboarding } from './assets/onboarding.js';
+  import { initOnboarding } from './dist/onboarding.js';
   // Initialize for "Blackjack" mode
   document.addEventListener('DOMContentLoaded', () => initOnboarding('blackjack'));
 </script>

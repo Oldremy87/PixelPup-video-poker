@@ -19,8 +19,8 @@ export default defineConfig({
   }),
   ],
   build: {
-    outDir: 'public/assets',
-    emptyOutDir: false,
+    outDir: 'public/dist',
+  emptyOutDir: true,
     target: 'es2022',
     sourcemap: true,                // keep on while we verify
     minify: false,                  // TEMP: avoid TDZ-obscuring minification
@@ -32,11 +32,12 @@ export default defineConfig({
       formats: ['es'],
     },
     rollupOptions: {
-      output: {
-        entryFileNames: '[name].js',
-        chunkFileNames: 'chunks/[name]-[hash].js',
-        assetFileNames: 'assets/[name]-[hash][extname]',
-      },
+      rollupOptions: {
+  output: {
+    entryFileNames: '[name].js',
+    chunkFileNames: 'chunks/[name]-[hash].js',
+  },
+}
     
     },
   },
