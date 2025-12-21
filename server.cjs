@@ -515,24 +515,21 @@ app.get('/api/profile', async (req, res) => {
       throw e;
     }
 
-    // 2. Load Stats (Initialize variables to null first!)
-    let stats = null;
-    let poker = null;
-    let bj = null;
-    let dice = null; // <--- This was likely missing, causing the crash
+   // 2. Load Stats
+let poker = null;
+let bj    = null;
+let dice  = null;
 
-    try {
-      stats = await loadStats(req.uid);
-      
-      // Load all game stats in parallel
-      [poker, bj, dice] = await Promise.all([
-        loadStatsFor(req.uid, 'poker'),
-        loadStatsFor(req.uid, 'blackjack'),
-        loadStatsFor(req.uid, 'dice') // This works now that tables exist
-      ]);
-    } catch (e) {
-      console.error('[Profile] Stats loading failed:', e.message);
-    }
+try {
+  [poker, bj, dice] = await Promise.all([
+    loadStatsFor(req.uid, 'poker'),
+    loadStatsFor(req.uid, 'blackjack'),
+    loadStatsFor(req.uid, 'dice'),
+  ]);
+} catch (e) {
+  console.error('[Profile] Stats loading failed:', e.message);
+}
+
 let linked = { linked:false };
 
 if (hasDb) {
