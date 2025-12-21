@@ -1112,31 +1112,6 @@ function setChip(el, kind, text) {
   el.className = `chip ${kind}`;
   el.textContent = text;
 }
-// ---- ASSET VERSIONING (ONE per page-load) ----
-const __assetVPromise = (async () => {
-  try {
-    const r = await fetch('/api/version', { cache: 'no-store' });
-    const j = await r.json();
-    // prefer build, then commit, else fallback
-    return (j.build || j.commit || null);
-  } catch {
-    return null;
-  }
-})();
-
-const __assetUrlsPromise = (async () => {
-  const v = (await __assetVPromise) || String(Date.now()); // Date.now ONLY ONCE per page-load
-  const qs = `v=${encodeURIComponent(v)}`;
-  return {
-    walletModUrl: `/assets/walletBet.bundle.js?${qs}`,
-    modalUrl:     `/assets/wallet-modal.js?${qs}`,
-  };
-})();
-
-// helper you can call anywhere
-async function getAssetUrls() {
-  return __assetUrlsPromise;
-}
 
 
 function updatePlayerPanelFromSnapshot(data) {
@@ -1603,6 +1578,31 @@ async function split(){
     if (String(msg).includes('ResizeObserver')) return;
     console.error("Global Error:", msg);
   };
+// ---- ASSET VERSIONING (ONE per page-load) ----
+const __assetVPromise = (async () => {
+  try {
+    const r = await fetch('/api/version', { cache: 'no-store' });
+    const j = await r.json();
+    // prefer build, then commit, else fallback
+    return (j.build || j.commit || null);
+  } catch {
+    return null;
+  }
+})();
+
+const __assetUrlsPromise = (async () => {
+  const v = (await __assetVPromise) || String(Date.now()); // Date.now ONLY ONCE per page-load
+  const qs = `v=${encodeURIComponent(v)}`;
+  return {
+    walletModUrl: `/assets/walletBet.bundle.js?${qs}`,
+    modalUrl:     `/assets/wallet-modal.js?${qs}`,
+  };
+})();
+
+// helper you can call anywhere
+async function getAssetUrls() {
+  return __assetUrlsPromise;
+}
 
   // --- 2. STATE ---
   const state = {
