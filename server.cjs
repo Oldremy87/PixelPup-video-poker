@@ -444,7 +444,8 @@ async function mergeStats(sourceUid, targetUid, client = null) {
   const p = client || await db();
   const doTx = !client;
 
-  const sidInt = await getCurrentSeasonId();
+  // Current season (optional). We'll still merge *all* season rows below.
+  const sidInt  = await getCurrentSeasonId();
   const sidText = (sidInt != null) ? String(sidInt) : null;
 
   if (doTx) await p.query('BEGIN');
@@ -466,7 +467,7 @@ async function mergeStats(sourceUid, targetUid, client = null) {
         sets.push(`${col} = COALESCE(t.${col},false) OR COALESCE(s.${col},false)`);
       }
       for (const col of (cfg.maxTsCols || [])) {
-        sets.push(sqlMaxTs(col)); // make sure sqlMaxTs is in scope
+        sets.push(sqlMaxTs(col)); // must be in scope
       }
 
       if (sets.length) {
@@ -474,20 +475,23 @@ async function mergeStats(sourceUid, targetUid, client = null) {
           `UPDATE ${statsTable} t
               SET ${sets.join(', ')}
              FROM ${statsTable} s
-            WHERE t.user_id = $1 AND s.user_id = $2`,
+            WHERE t.user_id = $1::uuid
+              AND s.user_id = $2::uuid`,
           [targetUid, sourceUid]
         );
       }
 
-      // --- merge season points (if active season + table exists) ---
-      if (pointsTable && sidInt != null) {
-        const sid = (cfg.seasonIdType === 'text') ? sidText : sidInt;
-
+      // --- merge season points ---
+      if (pointsTable) {
+        // ✅ safest: merge ALL seasons that exist for source -> target
+        // This avoids leaving old-season rows behind.
         await p.query(
           `INSERT INTO ${pointsTable}(season_id, user_id, points_total)
-           VALUES($1,$2,0)
+           SELECT season_id, $1::uuid, 0
+           FROM ${pointsTable}
+           WHERE user_id = $2::uuid
            ON CONFLICT DO NOTHING`,
-          [sid, targetUid]
+          [targetUid, sourceUid]
         );
 
         await p.query(
@@ -495,42 +499,44 @@ async function mergeStats(sourceUid, targetUid, client = null) {
               SET points_total = COALESCE(t.points_total,0) + COALESCE(s.points_total,0),
                   last_update  = NOW()
              FROM ${pointsTable} s
-            WHERE t.season_id=$1 AND t.user_id=$2
-              AND s.season_id=$1 AND s.user_id=$3`,
-          [sid, targetUid, sourceUid]
+            WHERE t.season_id = s.season_id
+              AND t.user_id   = $1::uuid
+              AND s.user_id   = $2::uuid`,
+          [targetUid, sourceUid]
         );
 
-        // delete the source row for this season
         await p.query(
-          `DELETE FROM ${pointsTable} WHERE season_id=$1 AND user_id=$2`,
-          [sid, sourceUid]
+          `DELETE FROM ${pointsTable} WHERE user_id = $1::uuid`,
+          [sourceUid]
         );
       }
 
-      // ✅ ALWAYS delete source stats row so we don't leave FK references
-      await p.query(`DELETE FROM ${statsTable} WHERE user_id = $1`, [sourceUid]);
+      // ✅ delete source stats row for this game table AFTER merge attempt
+      // (even if sets.length=0, you might still want to keep it — your call)
+      await p.query(`DELETE FROM ${statsTable} WHERE user_id = $1::uuid`, [sourceUid]);
     }
 
-    // ✅ migrate payouts to target (both uuid + legacy text)
+    // ✅ migrate payouts (cast both sides explicitly)
     await p.query(
       `UPDATE payouts
-          SET user_id_uuid = $2,
+          SET user_id_uuid = $2::uuid,
               user_id      = $2::text
-        WHERE user_id_uuid = $1
+        WHERE user_id_uuid = $1::uuid
            OR user_id      = $1::text`,
       [sourceUid, targetUid]
     );
 
-    // optional but recommended: prevent wallet uniqueness conflicts / ghosts
+    // optional: clear wallet fields on source to avoid any “ghost” identity
     await p.query(
       `UPDATE users
-          SET wallet_addr=NULL, wallet_net=NULL
-        WHERE user_id=$1`,
+          SET wallet_addr = NULL,
+              wallet_net  = NULL
+        WHERE user_id = $1::uuid`,
       [sourceUid]
     );
 
-    // ✅ finally delete the source user row (now safe)
-    await p.query(`DELETE FROM users WHERE user_id=$1`, [sourceUid]);
+    // ✅ finally delete source user (should be safe now)
+    await p.query(`DELETE FROM users WHERE user_id = $1::uuid`, [sourceUid]);
 
     if (doTx) await p.query('COMMIT');
   } catch (e) {
@@ -538,6 +544,7 @@ async function mergeStats(sourceUid, targetUid, client = null) {
     throw e;
   }
 }
+
 
 
 app.get('/api/profile', async (req, res) => {
