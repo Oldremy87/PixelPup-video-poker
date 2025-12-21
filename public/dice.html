@@ -941,7 +941,7 @@
 
     try {
       const { loadWallet } = await import(`/assets/walletBet.bundle.js?t=${Date.now()}`);
-      const { getSigner } = await import("/assets/wallet-modal.js?v=Christmasv22cachedupdate");
+      const { getSigner } = await import("/assets/wallet-modal.js?v=Christmasv22cachedupdate5");
 
       const pass = await getSigner();
       if (!pass) {
@@ -967,8 +967,8 @@
   // --- INTERNAL BET HELPER ---
   async function triggerBet(btnElement) {
     try {
-      const { placeBet } = await import(`/assets/walletBet.bundle.js?v=ChristmasUpdate`);
-      const { getSigner } = await import("/assets/wallet-modal.js?v=Christmasv22cachedupdate");
+      const { placeBet } = await import(`/assets/walletBet.bundle.js?v=ChristmasUpdate5`);
+      const { getSigner } = await import("/assets/wallet-modal.js?v=Christmasv22cachedupdate5");
 
       const passphrase = await getSigner();
       if (!passphrase) throw new Error("Cancelled");
@@ -1080,7 +1080,7 @@
             try {
                 btn.textContent = 'Sending...';
                 btn.disabled = true;
-                const { getSigner } = await import("/assets/wallet-modal.js?v=Christmasv22cachedupdate");
+                const { getSigner } = await import("/assets/wallet-modal.js?v=Christmasv22cachedupdate5");
                 const { sendFunds } = await import(`/assets/walletBet.bundle.js?t=${Date.now()}`);
                 const passphrase = await getSigner();
                 if (!passphrase) throw new Error('Cancelled');
