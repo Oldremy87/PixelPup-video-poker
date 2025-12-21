@@ -1578,32 +1578,6 @@ async function split(){
     if (String(msg).includes('ResizeObserver')) return;
     console.error("Global Error:", msg);
   };
-  
-// ---- ASSET VERSIONING (ONE per page-load) ----
-const __assetVPromise = (async () => {
-  try {
-    const r = await fetch('/api/version', { cache: 'no-store' });
-    const j = await r.json();
-    // prefer build, then commit, else fallback
-    return (j.build || j.commit || null);
-  } catch {
-    return null;
-  }
-})();
-
-const __assetUrlsPromise = (async () => {
-  const v = (await __assetVPromise) || String(Date.now()); // Date.now ONLY ONCE per page-load
-  const qs = `v=${encodeURIComponent(v)}`;
-  return {
-    walletModUrl: `/dist/walletBet.bundle.js?${qs}`,
-    modalUrl:     `/assets/wallet-modal.js?${qs}`,
-  };
-})();
-
-// helper you can call anywhere
-async function getAssetUrls() {
-  return __assetUrlsPromise;
-}
 
   // --- 2. STATE ---
   const state = {
@@ -1716,9 +1690,8 @@ async function getAssetUrls() {
                 btn.disabled = true;
 
                 // Load Deps
-                const { walletModUrl, modalUrl } = await getAssetUrls();
-                const { getSigner }  = await import(modalUrl);
-            const { sendFunds } = await import(walletModUrl);
+                const { getSigner } = await import("/assets/wallet-modal.js?v=Christmasv22cachedupdate");
+              const { sendFunds } = await import(`/assets/walletBet.bundle.js?t=${Date.now()}`);
 
                 const passphrase = await getSigner();
                 if (!passphrase) throw new Error('Cancelled');
@@ -1788,7 +1761,7 @@ async function getAssetUrls() {
 
             try {
                 // FIX: Add timestamp ?t=... to force browser to ignore cache and get the new file
-                const module = await import(`/dist/walletBet.bundle.js?t=${Date.now()}`);
+                const module = await import(`/assets/walletBet.bundle.js?t=${Date.now()}`);
                 
                 const recoverFn = module.recoverSeed || (module.default && module.default.recoverSeed);
 
@@ -1887,9 +1860,8 @@ async function getAssetUrls() {
     if (btn) btn.textContent = 'Loading...';
 
     try {
-    const { walletModUrl, modalUrl } = await getAssetUrls();
-const { loadWallet } = await import(walletModUrl);
-const { getSigner }  = await import(modalUrl);
+      const { loadWallet } = await import("/assets/walletBet.bundle.js?t=${Date.now()}");
+      const { getSigner } = await import("/assets/wallet-modal.js?v=Christmasv22cachedupdate");
 
       const pass = await getSigner();
       if (!pass) {
@@ -1920,9 +1892,8 @@ const { getSigner }  = await import(modalUrl);
       btn.disabled = true;
       btn.classList.add('busy');
       btn.textContent = 'Loading Wallet...';
-   const { walletModUrl, modalUrl } = await getAssetUrls();
-const { placeBet } = await import(walletModUrl);
-const { getSigner } = await import(modalUrl);
+      const { placeBet } = await import(`/assets/walletBet.bundle.js?v=ChristmasUpdate`);
+      const { getSigner } = await import("/assets/wallet-modal.js?v=Christmasv22cachedupdate");
 
       btn.textContent = 'Authorizing...';
       const passphrase = await getSigner();

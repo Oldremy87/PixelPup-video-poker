@@ -1,5 +1,5 @@
-import { B as Buffer$1, p as process$1, n as nodeCrypto } from "./chunks/index-4OmLNdFl.js";
-import { rostrumProvider as $884ce55f1db7e177$export$eaa49f0478d81b9d } from "./chunks/index.web-DbMxL4du.js";
+import { B as Buffer$1, p as process$1, n as nodeCrypto } from "./chunks/index-C_zbkbH-.js";
+import { rostrumProvider as $884ce55f1db7e177$export$eaa49f0478d81b9d } from "./chunks/index.web-Does7zZT.js";
 globalThis.Buffer ||= Buffer$1;
 globalThis.process ||= process$1;
 globalThis.__nodeCrypto = nodeCrypto;
@@ -14,7 +14,7 @@ GLOBALS.__WALLET_SESSION = GLOBALS.__WALLET_SESSION || null;
 GLOBALS.__WALLET_LOADING = GLOBALS.__WALLET_LOADING || null;
 GLOBALS.__WALLET_RECONNECT = GLOBALS.__WALLET_RECONNECT || null;
 async function getSdk() {
-  return await import("./chunks/index.web-DbMxL4du.js");
+  return await import("./chunks/index.web-Does7zZT.js");
 }
 function getWalletCtor(mod) {
   return mod?.Wallet ?? mod?.default?.Wallet;

@@ -1,6 +1,11 @@
 export async function initOnboarding(gameType = null) {
   // 1. Get Wallet Status
   let wallet = null;
+  const gameTitles = {
+  poker: 'Poker',
+  blackjack: 'Blackjack',
+  dice: 'Dice'
+};
   try {
     const r = await fetch('/api/wallet/status');
     const j = await r.json();
@@ -83,35 +88,47 @@ export async function initOnboarding(gameType = null) {
   }
 
   // SCENARIO D: Game Page - READY (Show Rules if not seen)
-  if (!hasSeen) {
-    const rules = gameType === 'poker' 
-      ? `
-        <p><strong>Video Poker Rules:</strong></p>
-        <ul>
-          <li><strong>Jacks or Better:</strong> Pair of Jacks is the minimum win.</li>
-          <li><strong>One Draw:</strong> Tap cards to HOLD, then draw replacement cards.</li>
-          <li><strong>Royal Flush:</strong> Pays 250x!</li>
-        </ul>
-        <p>Winnings are paid <strong></strong> to your wallet via Claim.</p>
-      `
-      : `
-        <p><strong>Blackjack Rules:</strong></p>
-        <ul>
-          <li><strong>Goal:</strong> Beat the dealer without going over 21.</li>
-          <li><strong>Payouts:</strong> 3:2 for Blackjack. Dealer stands on Soft 17.</li>
-          <li><strong>Controls:</strong> Hit, Stand, Double, and Split are supported.</li>
-        </ul>
-        <p>Winnings are paid <strong></strong> to your wallet via FeedMe.</p>
-      `;
+if (!hasSeen) {
+  const rules = gameType === 'poker' 
+    ? `
+      <p><strong>Video Poker Rules:</strong></p>
+      <ul>
+        <li><strong>Jacks or Better:</strong> Pair of Jacks is the minimum win.</li>
+        <li><strong>One Draw:</strong> Tap cards to HOLD, then draw replacement cards.</li>
+        <li><strong>Royal Flush:</strong> Pays 250x!</li>
+      </ul>
+      <p>Winnings are paid directly to your wallet via Claim.</p>
+    `
+    : gameType === 'blackjack' 
+    ? `
+      <p><strong>Blackjack Rules:</strong></p>
+      <ul>
+        <li><strong>Goal:</strong> Beat the dealer without going over 21.</li>
+        <li><strong>Payouts:</strong> 3:2 for Blackjack. Dealer stands on Soft 17.</li>
+        <li><strong>Controls:</strong> Hit, Stand, Double, and Split are supported.</li>
+      </ul>
+      <p>Winnings are paid directly to your wallet via FeedMe.</p>
+    ` 
+    : `
+      <p><strong>Dice Rules:</strong></p>
+      <ul>
+        <li><strong>Betting:</strong> Click "Place 100 KIBL Bet" and sign the tx in your Nexa wallet.</li>
+        <li><strong>Gameplay:</strong> Pick a Pup tier and hit "Roll Dice".</li>
+        <li><strong>Winning:</strong> If your roll is below the target, you win KIBL!</li>
+        <li><strong>Fairness:</strong> Click Fairness to verify the server seed.</li>
+      </ul>
+      <p>Winnings are paid to your <strong>in-app bank</strong>.</p>
+    `;
 
-    showModal({
-      title: `How to Play ${gameType === 'poker' ? 'Poker' : 'Blackjack'}`,
-      body: rules,
-      btnText: 'Let\'s Play!',
-      onClose: () => localStorage.setItem(LS_KEY, '1')
-    });
-  }
+  showModal({
+    title: `How to Play ${gameTitles[gameType] || 'Game'}`,
+    body: rules,
+    btnText: 'Let\'s Play!',
+    onClose: () => localStorage.setItem(LS_KEY, '1')
+  });
 }
+}
+
 
 // Internal Helper to Render Modal
 function showModal({ title, body, btnText, btnAction, secondaryText, onClose }) {
