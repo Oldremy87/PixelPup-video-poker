@@ -36,7 +36,7 @@ async function ensureRostrum() {
     console.log('✅ [Rostrum] Connected to Private Node (NVMe Accelerated)');
   } catch (e) {
     console.warn('⚠️ [Rostrum] Private node unreachable, attempting failover:', e.message);
-  } */
+*/
     try {
       await rostrumProvider.connect({ 
         scheme: 'wss', 
@@ -171,9 +171,12 @@ app.get('/api/csrf', csrfProtection, (req, res) => {
   res.json({ csrfToken: req.csrfToken() });
 });
 app.use('/api', (req, res, next) => {
-  if (req.method === 'GET' || req.method === 'HEAD' || req.method === 'OPTIONS') {
-    return next();
+  if (req.path.startsWith('/admin/')) {
+    const tok = req.headers['x-admin-token'];
+    if (process.env.ADMIN_TOKEN && tok === process.env.ADMIN_TOKEN) return next();
   }
+
+  if (req.method === 'GET' || req.method === 'HEAD' || req.method === 'OPTIONS') return next();
   return csrfProtection(req, res, next);
 });
 
@@ -187,10 +190,32 @@ const PAYOUT_COOLDOWN_MS = Number(process.env.PAYOUT_COOLDOWN_MS || SIX_HOURS_MS
 const HCAPTCHA_SECRET   = process.env.HCAPTCHA_SECRET;  
 const HCAPTCHA_HOSTNAME = process.env.HCAPTCHA_HOSTNAME || '';   
 const tablesByGame = {
-  poker:      { stats: 'user_stats',            points: 'season_points' },
-  blackjack:  { stats: 'user_stats_blackjack',  points: 'season_points_blackjack' },
-  dice:       { stats: 'user_stats_dice',            points: 'season_points_dice' }
+  poker: {
+    stats: 'user_stats',
+    points: 'season_points',
+    seasonIdType: 'int',
+    sumCols: ['wins','royal_flushes','bank_minor','points'],
+    boolCols: ['first_win','w10','w25','w50','royal_win'],
+    maxTsCols: ['last_daily_reward_at','last_seen_at'],
+  },
+  blackjack: {
+    stats: 'user_stats_blackjack',
+    points: 'season_points_blackjack',
+    seasonIdType: 'int',
+    sumCols: ['wins','royal_flushes','bank_minor','points','blackjacks'],
+    boolCols: ['first_win','w10','w25','w50','royal_win','bj_natural','bj_double_win','bj_split_win'],
+    maxTsCols: ['last_daily_reward_at','last_seen_at'],
+  },
+  dice: {
+    stats: 'user_stats_dice',
+    points: 'season_points_dice',
+    seasonIdType: 'text', // <-- because your schema is text today
+    sumCols: ['wins','rolls','big_win'],
+    boolCols: [],
+    maxTsCols: ['last_seen_at'],
+  }
 };
+
 
 
 
@@ -254,7 +279,110 @@ app.use((req, _res, next) => {
   next();
 });
 
+let _adminMergeInFlight = false;
 
+
+
+function isUuid(s) {
+  return typeof s === 'string' &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(s);
+}
+function requireAdmin(req, res) {
+  const tok =
+    (req.get && (req.get('X-Admin-Token') || req.get('x-admin-token'))) ||
+    req.headers['x-admin-token'];
+
+  if (!process.env.ADMIN_TOKEN || tok !== process.env.ADMIN_TOKEN) {
+    res.status(403).json({ ok:false, error:'forbidden' });
+    return false;
+  }
+  return true;
+}
+
+
+ //POST /api/admin/merge-wallet-dupes
+// Headers: X-Admin-Token: <ADMIN_TOKEN>
+//Body: { dryRun?: boolean }
+app.post('/api/admin/merge-wallet-dupes', async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  if (_adminMergeInFlight) return res.status(409).json({ ok:false, error:'merge_in_flight' });
+
+  _adminMergeInFlight = true;
+  const startedAt = new Date().toISOString();
+
+  // Exact merge plan (source -> master)
+  const merges = [
+    ['c142fd99-7ec5-45cf-aab1-0c36dce27330', '770a17c5-aded-4f64-b77c-9a303f8d9511'],
+    ['fe51a702-a4f7-4391-b7cb-63e87ab1bf63', '468a656f-7585-4b7b-8008-53a3716e17af'],
+    ['adec28de-d1f0-4b99-8fab-bc65303e0e2e', '468a656f-7585-4b7b-8008-53a3716e17af'],
+    ['91bc8fcc-a9eb-4735-b302-ccb7921c5fa5', '468a656f-7585-4b7b-8008-53a3716e17af'],
+    ['42847002-c7d3-46df-a277-6c977ebc054f', '2ab24498-5b8b-4a55-b734-e06aa195ace7'],
+  ];
+
+  try {
+    if (!hasDb) return res.status(500).json({ ok:false, error:'db_not_enabled' });
+
+    const dryRun = !!(req.body && req.body.dryRun);
+
+    // validate inputs up front
+    for (const [src, dst] of merges) {
+      if (!isUuid(src) || !isUuid(dst)) {
+        return res.status(400).json({ ok:false, error:'bad_uid_format', src, dst });
+      }
+      if (src === dst) {
+        return res.status(400).json({ ok:false, error:'src_eq_dst', uid: src });
+      }
+    }
+
+    const p = await db();
+
+    // Optional: DB advisory lock so even if you have multiple instances, only one runs
+    // Pick any constant 64-bit int; just keep it stable.
+    await p.query('SELECT pg_advisory_lock(9223372036854775000)');
+
+    const report = [];
+    const sidInt = await getCurrentSeasonId(); // for visibility in response
+
+    for (const [src, dst] of merges) {
+      const row = { src, dst, ok:false };
+
+      // Verify both users exist (create if missing)
+      await getOrCreateUser(src);
+      await getOrCreateUser(dst);
+
+      if (dryRun) {
+        row.ok = true;
+        row.note = 'dryRun: skipped mergeStats';
+        report.push(row);
+        continue;
+      }
+
+      await mergeStats(src, dst);
+      row.ok = true;
+      report.push(row);
+    }
+
+    await p.query('SELECT pg_advisory_unlock(9223372036854775000)');
+
+    return res.json({
+      ok: true,
+      dryRun,
+      season_id: sidInt,
+      startedAt,
+      finishedAt: new Date().toISOString(),
+      merges: report
+    });
+  } catch (e) {
+    console.error('[admin merge] failed', e);
+    return res.status(500).json({
+      ok:false,
+      error:'merge_failed',
+      message: String(e && e.message || e)
+    });
+  } finally {
+    _adminMergeInFlight = false;
+  }
+});
 // =================== Hand/IP limiting ===================
 
 const HANDS_WINDOW_MS  = SIX_HOURS_MS;
@@ -270,7 +398,77 @@ function touch(rec, now) {
     ? { windowStart: now, counts: { poker: 0, blackjack: 0, dice: 0 } }
     : rec;
 }
-// REPLACE your existing app.get('/api/profile', ...) block with this:
+async function mergeStats(sourceUid, targetUid, client = null) {
+  if (!hasDb) return;
+  if (!sourceUid || !targetUid || sourceUid === targetUid) return;
+
+  const p = client || await db();
+  const doTx = !client;
+
+  const sidInt = await getCurrentSeasonId();
+  const sidText = String(sidInt);
+
+  if (doTx) await p.query('BEGIN');
+  try {
+    await getOrCreateUser(targetUid, p);
+    await getOrCreateUser(sourceUid, p);
+
+    for (const game of Object.keys(tablesByGame)) {
+      const cfg = tablesByGame[game];
+      const statsTable = cfg.stats;
+      const pointsTable = cfg.points;
+
+      // merge stats
+      const sets = [];
+      for (const col of (cfg.sumCols || [])) sets.push(`${col} = COALESCE(t.${col},0) + COALESCE(s.${col},0)`);
+      for (const col of (cfg.boolCols || [])) sets.push(`${col} = COALESCE(t.${col},false) OR COALESCE(s.${col},false)`);
+      for (const col of (cfg.maxTsCols || [])) sets.push(sqlMaxTs(col));
+
+      if (sets.length) {
+        await p.query(
+          `UPDATE ${statsTable} t
+             SET ${sets.join(', ')}
+            FROM ${statsTable} s
+           WHERE t.user_id = $1 AND s.user_id = $2`,
+          [targetUid, sourceUid]
+        );
+      }
+
+      // merge season points
+      if (pointsTable && sidInt) {
+        const sid = (cfg.seasonIdType === 'text') ? sidText : sidInt;
+
+        await p.query(
+          `INSERT INTO ${pointsTable}(season_id, user_id, points_total)
+           VALUES($1,$2,0)
+           ON CONFLICT DO NOTHING`,
+          [sid, targetUid]
+        );
+
+        await p.query(
+          `UPDATE ${pointsTable} t
+              SET points_total = COALESCE(t.points_total,0) + COALESCE(s.points_total,0),
+                  last_update  = NOW()
+             FROM ${pointsTable} s
+            WHERE t.season_id=$1 AND t.user_id=$2
+              AND s.season_id=$1 AND s.user_id=$3`,
+          [sid, targetUid, sourceUid]
+        );
+
+        await p.query(
+          `DELETE FROM ${pointsTable} WHERE season_id=$1 AND user_id=$2`,
+          [sid, sourceUid]
+        );
+      }
+    }
+
+    if (doTx) await p.query('COMMIT');
+  } catch (e) {
+    if (doTx) await p.query('ROLLBACK');
+    throw e;
+  }
+}
+
 
 app.get('/api/profile', async (req, res) => {
   try {
@@ -303,6 +501,18 @@ app.get('/api/profile', async (req, res) => {
     } catch (e) {
       console.error('[Profile] Stats loading failed:', e.message);
     }
+let linked = { linked:false };
+
+if (hasDb) {
+  const p = await db();
+  const { rows } = await p.query(
+    'select wallet_addr as address, wallet_net as network from users where user_id=$1',
+    [req.uid]
+  );
+  if (rows[0]?.address) linked = { linked:true, ...rows[0] };
+} else if (req.session?.linkedWallet) {
+  linked = { linked:true, ...req.session.linkedWallet };
+}
 
     const displayId = await ensureDisplayId(req.uid);
     
@@ -315,7 +525,8 @@ app.get('/api/profile', async (req, res) => {
     // 4. Send Response
     return res.json({
       ok: true,
-      displayId,
+       displayId,
+      linked, 
       bank: total,
       balances: { poker: balPoker, blackjack: balBJ, total },
       stats: {
@@ -567,75 +778,36 @@ const RANKS = ['Ace','2','3','4','5','6','7','8','9','10','Jack','Queen','King']
 const SUITS = ['Clubs','Diamonds','Hearts','Spades'];
 const RANK_VALUE = { '2':2,'3':3,'4':4,'5':5,'6':6,'7':7,'8':8,'9':9,'10':10,'Jack':11,'Queen':12,'King':13,'Ace':14 };
 
-async function getOrCreateUser(uid) {
+async function getOrCreateUser(uid, client = null) {
   if (!hasDb) return;
-  const p = await db();
-  await p.query('BEGIN');
+  const p = client || await db();
+
+  // IMPORTANT: don't BEGIN/COMMIT here if client is provided
+  const doTx = !client;
+  if (doTx) await p.query('BEGIN');
+
   try {
-    await p.query('INSERT INTO users(user_id) VALUES($1) ON CONFLICT DO NOTHING', [uid]);
-    await p.query('INSERT INTO user_stats(user_id) VALUES($1) ON CONFLICT DO NOTHING', [uid]);
-    await p.query('INSERT INTO user_stats_blackjack(user_id) VALUES($1) ON CONFLICT DO NOTHING', [uid]);
-    await p.query('COMMIT');
+    await p.query(
+      'INSERT INTO users(user_id) VALUES($1) ON CONFLICT DO NOTHING',
+      [uid]
+    );
+
+    for (const game of Object.keys(tablesByGame)) {
+      const { stats } = tablesByGame[game];
+      await p.query(
+        `INSERT INTO ${stats}(user_id) VALUES($1) ON CONFLICT DO NOTHING`,
+        [uid]
+      );
+    }
+
+    if (doTx) await p.query('COMMIT');
   } catch (e) {
-    await p.query('ROLLBACK');
+    if (doTx) await p.query('ROLLBACK');
     throw e;
   }
 }
-app.use(async (req, _res, next) => {
-  try { await getOrCreateUser(req.uid); } catch {}
-  next();
-});
-async function mergeStats(sourceUid, targetUid) {
-  if (!hasDb) return;
-  const p = await db();
 
-  await p.query('BEGIN');
-  try {
-    // 1. Merge POKER Stats (user_stats)
-    await p.query(`
-      UPDATE user_stats target
-      SET 
-        wins = target.wins + source.wins,
-        royal_flushes = target.royal_flushes + source.royal_flushes,
-        bank_minor = target.bank_minor + source.bank_minor
-      FROM user_stats source
-      WHERE target.user_id = $1 AND source.user_id = $2
-    `, [targetUid, sourceUid]);
 
-    // 2. Merge BLACKJACK Stats (user_stats_blackjack)
-    await p.query(`
-      UPDATE user_stats_blackjack target
-      SET 
-        wins = target.wins + source.wins,
-        blackjacks = target.blackjacks + source.blackjacks,
-        bank_minor = target.bank_minor + source.bank_minor
-      FROM user_stats_blackjack source
-      WHERE target.user_id = $1 AND source.user_id = $2
-    `, [targetUid, sourceUid]);
-    const sid = await getCurrentSeasonId();
-    if (sid) {
-      await p.query(`INSERT INTO season_points(season_id, user_id, points_total) VALUES($1, $2, 0) ON CONFLICT DO NOTHING`, [sid, targetUid]);
-      
-      await p.query(`
-        UPDATE season_points target
-        SET points_total = target.points_total + source.points_total
-        FROM season_points source
-        WHERE target.season_id = $1 AND target.user_id = $2 
-          AND source.season_id = $1 AND source.user_id = $3
-      `, [sid, targetUid, sourceUid]);
-    }
-    await p.query('DELETE FROM user_stats WHERE user_id = $1', [sourceUid]);
-    await p.query('DELETE FROM user_stats_blackjack WHERE user_id = $1', [sourceUid]);
-    if (sid) await p.query('DELETE FROM season_points WHERE season_id = $1 AND user_id = $2', [sid, sourceUid]);
-
-    await p.query('COMMIT');
-    console.log(`[Merge] Successfully merged stats from ${sourceUid} into ${targetUid}`);
-
-  } catch (e) {
-    await p.query('ROLLBACK');
-    console.error('[Merge] Failed:', e);
-  }
-}
 
 async function loadStatsFor(uid, game) {
   if (!hasDb) return null;
@@ -803,64 +975,131 @@ app.get('/api/wallet/balance', async (req, res) => {
 });
 
 
+function regenSession(req) {
+  return new Promise((resolve, reject) => {
+    if (!req.session) return resolve();
+    req.session.regenerate(err => (err ? reject(err) : resolve()));
+  });
+}
+
 app.post('/api/wallet/link', async (req, res) => {
+  const startedUid = req.uid;
+
   try {
     const { address, network } = req.body || {};
-    // Validation matches your existing code 
-    if (!address || !/^nexa:/.test(address)) return res.status(400).json({ ok:false, error:'bad_address' });
-    const net = (network === 'mainnet') ? 'mainnet' : 'mainnet'; 
+    const net = (network === 'mainnet') ? 'mainnet' : 'mainnet';
 
-    // 1. Ensure the current temporary user exists (standard logic)
-    await getOrCreateUser(req.uid);
+    // normalize + validate
+    const addr = String(address || '').trim().toLowerCase();
+    if (!/^nexa:[a-z0-9]+$/.test(addr)) {
+      return res.status(400).json({ ok:false, error:'bad_address' });
+    }
 
-    if (hasDb) {
-      const p = await db();
+    // no-db fallback
+    if (!hasDb) {
+      req.session.linkedWallet = { address: addr, network: net };
+      if (req.session.save) {
+        await new Promise((r, j) => req.session.save(e => (e ? j(e) : r())));
+      }
+      return res.json({ ok:true, linked:true });
+    }
 
-      // 2. CHECK: Does this wallet belong to an existing user?
+    const p = await db();
+
+    await p.query('BEGIN');
+    try {
+      // ensure current user exists (and stats rows) inside this tx
+      await getOrCreateUser(startedUid, p);
+
+      // Lock the wallet owner row if it exists (prevents two devices racing a merge decision)
       const { rows: owners } = await p.query(
-        'SELECT user_id FROM users WHERE wallet_addr = $1', 
-        [address]
+        `SELECT user_id
+           FROM users
+          WHERE wallet_addr = $1
+          FOR UPDATE`,
+        [addr]
       );
 
+      // CASE 1: Wallet already owned by someone
       if (owners.length > 0) {
-        // FOUND EXISTING ACCOUNT
         const masterUid = owners[0].user_id;
 
-        if (masterUid !== req.uid) {
-          console.log(`[Link] Device switching: ${req.uid} -> ${masterUid}`);
+        // keep wallet fields fresh on master
+        await p.query(
+          `UPDATE users
+              SET wallet_addr = $2,
+                  wallet_net  = $3,
+                  last_seen_at = now()
+            WHERE user_id = $1`,
+          [masterUid, addr, net]
+        );
 
-           await mergeStats(req.uid, masterUid); // (Requires custom SQL function)
+        if (masterUid !== startedUid) {
+          console.log(`[Link] Device switching: ${startedUid} -> ${masterUid}`);
+
+          // merge INSIDE same tx (mergeStats must accept client p)
+          await mergeStats(startedUid, masterUid, p);
+
+          // optional but recommended: delete the now-merged user row
+          // (only safe if nothing else references users.user_id besides CASCADE tables)
+          await p.query(`DELETE FROM users WHERE user_id = $1`, [startedUid]);
+
+          await p.query('COMMIT');
+
+          // switch cookie to master user
           res.cookie('uid', masterUid, {
             httpOnly: true,
             sameSite: (process.env.CROSS_SITE_COOKIES === 'true') ? 'none' : 'lax',
-            secure: isProd, // defined in your lines [cite: 13]
-            maxAge: 1000 * 60 * 60 * 24 * 365 // 1 year
+            secure: isProd,
+            maxAge: 1000 * 60 * 60 * 24 * 365
           });
 
-          // Update the in-memory request for the rest of this cycle
+          // wipe session bank/wallet so we don't inherit device-local state
+          await regenSession(req);
           req.uid = masterUid;
-          
-          return res.json({ ok: true, switched: true, note: "Account recovered" });
+          ensureBank(req);
+
+          return res.json({ ok:true, switched:true, linked:true, note:'Account recovered' });
         }
-      } else {
-        // NEW LINK: No one owns this address yet. Link it to current UID.
-        await p.query(
-          `UPDATE users SET wallet_addr=$2, wallet_net=$3, last_seen_at=now() WHERE user_id=$1`,
-          [req.uid, address, net]
-        );
+
+        // already the master
+        await p.query('COMMIT');
+        return res.json({ ok:true, linked:true });
       }
-    } else {
-        // Fallback for no-DB mode (Keep existing logic)
-        req.session.linkedWallet = { address, network: net };
-        if (req.session.save) await new Promise((r,j)=>req.session.save(e=>e?j(e):r()));
+
+      // CASE 2: No owner — attach wallet to current uid
+      await p.query(
+        `UPDATE users
+            SET wallet_addr = $2,
+                wallet_net  = $3,
+                last_seen_at = now()
+          WHERE user_id = $1`,
+        [startedUid, addr, net]
+      );
+
+      await p.query('COMMIT');
+      return res.json({ ok:true, linked:true });
+
+    } catch (e) {
+      await p.query('ROLLBACK');
+
+      // if UNIQUE(wallet_addr) exists, this can happen during a race
+      if (String(e.message || '').includes('users_wallet_addr_unique')) {
+        return res.status(409).json({ ok:false, error:'wallet_race_retry' });
+      }
+
+      console.error('[wallet/link] tx failed', e);
+      return res.status(500).json({ ok:false, error:'link_error' });
     }
 
-    res.json({ ok: true });
-  } catch (e) { 
-    console.error(e);
-    res.status(500).json({ ok:false, error:'link_error' }); 
+  } catch (e) {
+    console.error('[wallet/link] crash', e);
+    return res.status(500).json({ ok:false, error:'link_error' });
   }
 });
+
+
+
 app.get('/api/wallet/status', async (req,res)=>{
   try {
     if (req.session?.linkedWallet) return res.json({ ok:true, linked:true, ...req.session.linkedWallet });
@@ -1348,14 +1587,24 @@ app.post('/api/daily-reward', rewardLimiter, async (req, res) => {
     if (hasDb) {
       // Check DB for any faucet claims in last 24h by this User OR IP
       const p = await db();
-      const { rows } = await p.query(
-        `SELECT created_at FROM payouts 
-         WHERE type = 'faucet' 
-           AND status = 'success'
-           AND (user_id = $1 OR ip = $2)
-         ORDER BY created_at DESC LIMIT 1`,
-        [uid, ip]
-      );
+      const ip = getClientIp(req);
+
+// uid here should be req.uid (uuid)
+const { rows } = await p.query(
+  `SELECT created_at
+   FROM payouts
+   WHERE type = 'faucet'
+     AND status = 'success'
+     AND (
+       user_id_uuid = $1
+       OR user_id = $2
+       OR ip = $3
+     )
+   ORDER BY created_at DESC
+   LIMIT 1`,
+  [req.uid, String(req.uid), ip]
+);
+
       if (rows.length > 0) {
         lastClaimTime = new Date(rows[0].created_at).getTime();
       }
@@ -1442,11 +1691,14 @@ app.post('/api/daily-reward', rewardLimiter, async (req, res) => {
     // 6. DB Logging
     if (hasDb) {
       const p = await db();
-      await p.query(
-        `INSERT INTO payouts(user_id, address, amount_kibl, tx_id, ip, type, status) 
-         VALUES ($1, $2, $3, $4, $5, 'faucet', 'success')`,
-        [uid, targetAddress, FAUCET_AMOUNT/100, txId, ip]
-      );
+    const ip = getClientIp(req);
+
+await p.query(
+  `INSERT INTO payouts(user_id, user_id_uuid, address, amount_kibl, tx_id, ip, type, status)
+   VALUES ($1, $2, $3, $4, $5, $6, 'faucet', 'success')`,
+  [String(req.uid), req.uid, targetAddress, FAUCET_AMOUNT / 100, txId, ip]
+);
+
     }
 
     return res.json({ ok: true, credit: FAUCET_AMOUNT, txId });
@@ -1588,9 +1840,13 @@ app.post('/api/payout', payoutLimiter, async (req, res) => {
     // DB Update
     if (hasDb) {
         const p = await db();
-        await p.query(`INSERT INTO payouts(address, amount_kibl, tx_id, session_id, ip, status) VALUES ($1,$2,$3,$4,$5,'success')`, 
-            [targetAddress, sendWholeKibl, txId, req.sessionID, req.ip]);
-            
+        const ip = getClientIp(req);
+
+await p.query(
+  `INSERT INTO payouts(user_id, user_id_uuid, address, amount_kibl, tx_id, session_id, ip, type, status)
+   VALUES ($1, $2, $3, $4, $5, $6, $7, 'withdrawal', 'success')`,
+  [String(req.uid), req.uid, targetAddress, sendWholeKibl, txId, req.sessionID, ip]
+);
         if (deductPoker > 0) await p.query('UPDATE user_stats SET bank_minor = GREATEST(bank_minor - $2, 0) WHERE user_id = $1', [req.uid, deductPoker]);
         if (deductBJ > 0) await p.query('UPDATE user_stats_blackjack SET bank_minor = GREATEST(bank_minor - $2, 0) WHERE user_id = $1', [req.uid, deductBJ]);
     }
