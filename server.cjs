@@ -445,7 +445,7 @@ async function mergeStats(sourceUid, targetUid, client = null) {
   const doTx = !client;
 
   const sidInt = await getCurrentSeasonId();
-  const sidText = String(sidInt);
+  const sidText = (sidInt != null) ? String(sidInt) : null;
 
   if (doTx) await p.query('BEGIN');
   try {
@@ -454,27 +454,33 @@ async function mergeStats(sourceUid, targetUid, client = null) {
 
     for (const game of Object.keys(tablesByGame)) {
       const cfg = tablesByGame[game];
-      const statsTable = cfg.stats;
+      const statsTable  = cfg.stats;
       const pointsTable = cfg.points;
 
-      // merge stats
+      // --- merge stats into target ---
       const sets = [];
-      for (const col of (cfg.sumCols || [])) sets.push(`${col} = COALESCE(t.${col},0) + COALESCE(s.${col},0)`);
-      for (const col of (cfg.boolCols || [])) sets.push(`${col} = COALESCE(t.${col},false) OR COALESCE(s.${col},false)`);
-      for (const col of (cfg.maxTsCols || [])) sets.push(sqlMaxTs(col));
+      for (const col of (cfg.sumCols || [])) {
+        sets.push(`${col} = COALESCE(t.${col},0) + COALESCE(s.${col},0)`);
+      }
+      for (const col of (cfg.boolCols || [])) {
+        sets.push(`${col} = COALESCE(t.${col},false) OR COALESCE(s.${col},false)`);
+      }
+      for (const col of (cfg.maxTsCols || [])) {
+        sets.push(sqlMaxTs(col)); // make sure sqlMaxTs is in scope
+      }
 
       if (sets.length) {
         await p.query(
           `UPDATE ${statsTable} t
-             SET ${sets.join(', ')}
-            FROM ${statsTable} s
-           WHERE t.user_id = $1 AND s.user_id = $2`,
+              SET ${sets.join(', ')}
+             FROM ${statsTable} s
+            WHERE t.user_id = $1 AND s.user_id = $2`,
           [targetUid, sourceUid]
         );
       }
 
-      // merge season points
-      if (pointsTable && sidInt) {
+      // --- merge season points (if active season + table exists) ---
+      if (pointsTable && sidInt != null) {
         const sid = (cfg.seasonIdType === 'text') ? sidText : sidInt;
 
         await p.query(
@@ -494,12 +500,37 @@ async function mergeStats(sourceUid, targetUid, client = null) {
           [sid, targetUid, sourceUid]
         );
 
+        // delete the source row for this season
         await p.query(
           `DELETE FROM ${pointsTable} WHERE season_id=$1 AND user_id=$2`,
           [sid, sourceUid]
         );
       }
+
+      // ✅ ALWAYS delete source stats row so we don't leave FK references
+      await p.query(`DELETE FROM ${statsTable} WHERE user_id = $1`, [sourceUid]);
     }
+
+    // ✅ migrate payouts to target (both uuid + legacy text)
+    await p.query(
+      `UPDATE payouts
+          SET user_id_uuid = $2,
+              user_id      = $2::text
+        WHERE user_id_uuid = $1
+           OR user_id      = $1::text`,
+      [sourceUid, targetUid]
+    );
+
+    // optional but recommended: prevent wallet uniqueness conflicts / ghosts
+    await p.query(
+      `UPDATE users
+          SET wallet_addr=NULL, wallet_net=NULL
+        WHERE user_id=$1`,
+      [sourceUid]
+    );
+
+    // ✅ finally delete the source user row (now safe)
+    await p.query(`DELETE FROM users WHERE user_id=$1`, [sourceUid]);
 
     if (doTx) await p.query('COMMIT');
   } catch (e) {
